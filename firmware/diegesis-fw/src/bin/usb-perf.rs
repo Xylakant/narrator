@@ -120,7 +120,7 @@ const APP: () = {
         let gpios_p1 = P1Parts::new(board.P1);
 
         timer.enable_interrupt();
-        timer.start(Timer::<TIMER0, Periodic>::TICKS_PER_SECOND / 10);
+        timer.start(Timer::<TIMER0, Periodic>::TICKS_PER_SECOND / 140);
         // timer1.enable_interrupt();
         // timer1.start(Timer::<TIMER1, Periodic>::TICKS_PER_SECOND / 30);
 
@@ -241,8 +241,6 @@ const APP: () = {
                 // defmt::info!("Dequeued Box!");
                 wip = Some((0, new_box));
             }
-
-            cortex_m::asm::delay(64_000_000 / 4000);
         }
     }
 };
