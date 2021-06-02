@@ -1,34 +1,14 @@
 #![no_main]
 #![no_std]
 
-// TODO: Remove
-#![allow(unused_imports)]
-
-use core::{
-    iter::{Cloned, Cycle},
-    sync::atomic::{AtomicBool, AtomicU32, AtomicU8, AtomicUsize, Ordering},
-};
-
-use embedded_hal::{
-    digital::v2::{InputPin, OutputPin},
-    timer::CountDown,
-};
-// use generic_array::typenum::U8;
+use embedded_hal::timer::CountDown;
 use diegesis_fw as _;
 
-#[allow(unused_imports)]
 use nrf52840_hal::{
     clocks::{Clocks, ExternalOscillator, Internal, LfOscStopped},
-    gpio::{
-        p0::Parts as P0Parts,
-        p1::Parts as P1Parts,
-        Input, Level, Output, Pin, PullUp, PushPull,
-    },
-    pac::{TIMER0, TIMER1, TWIM0},
-    timer::{Instance as TimerInstance, Periodic, Timer},
-    twim::{Frequency as TwimFrequency, Pins as TwimPins},
+    pac::TIMER0,
+    timer::{Periodic, Timer},
     usbd::Usbd,
-    Twim,
 };
 use rtic::app;
 use usb_device::{bus::UsbBusAllocator, class::UsbClass as _, device::UsbDeviceState, prelude::*};
@@ -61,7 +41,6 @@ pool!(
 );
 
 static REPORT_QUEUE: BBBuffer<bbconsts::U2048> = BBBuffer(ConstBBBuffer::new());
-static NONCE: AtomicU8 = AtomicU8::new(42);
 
 #[app(device = nrf52840_hal::pac, peripherals = true)]
 const APP: () = {
@@ -114,15 +93,10 @@ const APP: () = {
         let clocks = clocks.enable_ext_hfosc();
 
         let mut timer = Timer::periodic(board.TIMER0);
-        // let mut timer1 = Timer::periodic(board.TIMER1);
         let usbd = board.USBD;
-        let gpios_p0 = P0Parts::new(board.P0);
-        let gpios_p1 = P1Parts::new(board.P1);
 
         timer.enable_interrupt();
         timer.start(Timer::<TIMER0, Periodic>::TICKS_PER_SECOND / 200);
-        // timer1.enable_interrupt();
-        // timer1.start(Timer::<TIMER1, Periodic>::TICKS_PER_SECOND / 30);
 
         *CLOCKS = Some(clocks);
         let clocks = CLOCKS.as_ref().unwrap();
@@ -154,7 +128,7 @@ const APP: () = {
     }
 
     #[task(binds = TIMER0, priority = 1, resources = [timer, rpt_prod, box_prod])]
-    fn tick(mut c: tick::Context) {
+    fn tick(c: tick::Context) {
         static mut CUR_CHAR: u8 = b'a';
         static mut BACKOFF_CUR: u8 = 0;
         static mut BACKOFF_THR: u8 = 0;
@@ -168,6 +142,9 @@ const APP: () = {
 
         let mut pbox = if let Some(pb) = A::alloc() {
             *BACKOFF_THR = 0;
+
+            // TODO: This is probably UB. We should get the raw pointer instead,
+            // especially when we hand it to DMA anyway
             pb.freeze()
         } else {
             *BACKOFF_THR += 1;
@@ -198,7 +175,6 @@ const APP: () = {
     fn idle(mut c: idle::Context) -> ! {
         let mut state: UsbDeviceState = UsbDeviceState::Default;
         let mut ctr: u32 = 0;
-        let mut skip_flag = false;
         let mut wip: Option<(usize, Box<A, Init>)> = None;
 
         loop {
