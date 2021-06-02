@@ -120,7 +120,7 @@ const APP: () = {
         let gpios_p1 = P1Parts::new(board.P1);
 
         timer.enable_interrupt();
-        timer.start(Timer::<TIMER0, Periodic>::TICKS_PER_SECOND / 140);
+        timer.start(Timer::<TIMER0, Periodic>::TICKS_PER_SECOND / 200);
         // timer1.enable_interrupt();
         // timer1.start(Timer::<TIMER1, Periodic>::TICKS_PER_SECOND / 30);
 
@@ -132,10 +132,11 @@ const APP: () = {
         let serial = SerialPort::new(usb_bus);
         let usb_dev =
             UsbDeviceBuilder::new(usb_bus, UsbVidPid(0x16c0, 0x27DD))
-                .manufacturer("Fake company")
-                .product("Serial port")
-                .serial_number("TEST")
+                .manufacturer("Ferrous Systems")
+                .product("diegesis")
+                .serial_number("diegesis-001")
                 .device_class(USB_CLASS_CDC)
+                .max_packet_size_0(64) // (makes control transfers 8x faster)
                 .build();
 
         let (rpt_prod, rpt_cons) = REPORT_QUEUE.try_split_framed().unwrap();
@@ -155,12 +156,23 @@ const APP: () = {
     #[task(binds = TIMER0, priority = 1, resources = [timer, rpt_prod, box_prod])]
     fn tick(mut c: tick::Context) {
         static mut CUR_CHAR: u8 = b'a';
+        static mut BACKOFF_CUR: u8 = 0;
+        static mut BACKOFF_THR: u8 = 0;
 
         c.resources.timer.event_compare_cc0().write(|w| w);
+
+        *BACKOFF_CUR = BACKOFF_CUR.saturating_sub(1);
+        if *BACKOFF_CUR != 0 {
+            return;
+        }
+
         let mut pbox = if let Some(pb) = A::alloc() {
+            *BACKOFF_THR = 0;
             pb.freeze()
         } else {
-            defmt::warn!("No box available!");
+            *BACKOFF_THR += 1;
+            *BACKOFF_CUR = *BACKOFF_THR;
+            defmt::warn!("No box available! Setting Backoff to {}", *BACKOFF_CUR);
             return;
         };
 
@@ -170,7 +182,7 @@ const APP: () = {
             *CUR_CHAR += 1;
         }
 
-        pbox.chunks_mut(80).for_each(|c| {
+        pbox.chunks_mut(16).for_each(|c| {
             c.iter_mut().for_each(|b| *b = *CUR_CHAR);
             c[c.len() - 1] = b'\n';
         });
