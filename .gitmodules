@@ -1,0 +1,3 @@
+[submodule "firmware/vendor/nrf-hal"]
+	path = firmware/vendor/nrf-hal
+	url = https://github.com/Disasm/nrf-hal.git
