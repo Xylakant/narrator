@@ -8,7 +8,7 @@ fn main() {
     for port in ports {
         if let serialport::SerialPortType::UsbPort(usb_info) = port.port_type {
             if let Some(num) = usb_info.serial_number {
-                if num.contains("diegesis") {
+                if num.to_lowercase().contains("diegesis") {
                     dgs_port = Some(port.port_name);
                 }
             }
@@ -36,7 +36,7 @@ fn main() {
     match port {
         Ok(mut port) => {
             let mut serial_buf: Vec<u8> = vec![0; 1000];
-            println!("Receiving data on {} at {} baud:", &dgs_port, 115200);
+            println!("Receiving data on {}:", &dgs_port);
             loop {
                 if start.elapsed() >= Duration::from_secs(1) {
                     if moving_avg_rxd <= 0.0 {
@@ -80,6 +80,12 @@ fn main() {
                     let remainder = current.split_off(pos + 1);
                     let len = current.len();
                     let decoded = rlercobs::decode(&current[..len-1]).unwrap();
+                    decoded.iter().for_each(|b| {
+                        if *b != last {
+                            // println!("{:02X}", *b);
+                            last = *b;
+                        }
+                    });
                     bytes_dec += decoded.len();
                     current = remainder;
                 }

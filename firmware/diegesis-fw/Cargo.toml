@@ -26,10 +26,19 @@ bbqueue = "0.4.12"
 heapless = "0.7.1"
 embedded-dma = "0.1.2"
 
+
+[dependencies.serde]
+version = "1.0.126"
+default-features = false
+features = ["derive"]
+
 [dependencies.kolben]
 version = "0.0.3"
 default-features = false
 path = "../vendor/kolben"
+
+[dependencies.postcard]
+path = "../vendor/postcard"
 
 [dependencies.void]
 version = "1.0.2"

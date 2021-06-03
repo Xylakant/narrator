@@ -35,6 +35,8 @@ use heapless::{
     },
 };
 use kolben::rlercobs;
+use postcard::to_rlercobs_writer;
+use serde::{Serialize, ser::Serializer};
 
 type UsbDevice<'a> = usb_device::device::UsbDevice<'static, Usbd<'a>>;
 type UsbSerial<'a> = SerialPort<'static, Usbd<'a>>;
@@ -44,6 +46,24 @@ use bbqueue::{
     framed::{FrameConsumer, FrameProducer},
     BBBuffer, ConstBBBuffer,
 };
+
+#[derive(Debug, Serialize)]
+pub struct PoolBox {
+    #[serde(serialize_with = "slicer")]
+    data: Box<A, Init>,
+}
+
+use core::ops::Deref;
+
+// TODO: This could be done as an array, and not a slice, which
+// would be more efficient on the wire (2-3 bytes/message)
+fn slicer<S>(pb: &Box<A, Init>, s: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    s.serialize_bytes(pb.deref())
+}
+
 
 pool!(
     A: [u8; 4096]
@@ -276,17 +296,12 @@ const APP: () = {
                     break;
                 };
 
-                let mut encoder = rlercobs::Encoder::new(
+                let fbuf = to_rlercobs_writer(
+                    &PoolBox { data: new_box },
                     FillBuf { buf: wgr, used: 0 }
-                );
-                new_box.iter().for_each(|b| {
-                    encoder.write(*b).unwrap();
-                });
-                encoder.end().unwrap();
-                encoder.writer().write(0x00).unwrap();
-                let len = encoder.writer().content_len();
-                let grant = encoder.free();
-                grant.buf.commit(len);
+                ).unwrap();
+                let len = fbuf.content_len();
+                fbuf.buf.commit(len);
             }
 
             // Second: Drain as many bytes into the serial port as possible,

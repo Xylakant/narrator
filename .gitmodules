@@ -4,3 +4,6 @@
 [submodule "firmware/vendor/kolben"]
 	path = firmware/vendor/kolben
 	url = https://github.com/jamesmunns/kolben.git
+[submodule "firmware/vendor/postcard"]
+	path = firmware/vendor/postcard
+	url = https://github.com/jamesmunns/postcard.git
