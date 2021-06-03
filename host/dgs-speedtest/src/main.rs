@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
-
+use kolben::rlercobs;
 
 fn main() {
     let mut dgs_port = None;
@@ -27,8 +27,11 @@ fn main() {
 
     let mut start = Instant::now();
     let mut bytes_rxd = 0;
-    let mut moving_avg = -1.0f64;
+    let mut bytes_dec = 0;
+    let mut moving_avg_rxd = -1.0f64;
+    let mut moving_avg_dec = -1.0f64;
     let mut last = 0u8;
+    let mut current = Vec::new();
 
     match port {
         Ok(mut port) => {
@@ -36,33 +39,49 @@ fn main() {
             println!("Receiving data on {} at {} baud:", &dgs_port, 115200);
             loop {
                 if start.elapsed() >= Duration::from_secs(1) {
-                    if moving_avg <= 0.0 {
-                        moving_avg = bytes_rxd as f64;
+                    if moving_avg_rxd <= 0.0 {
+                        moving_avg_rxd = bytes_rxd as f64;
                     } else {
-                        moving_avg *= 0.9;
-                        moving_avg += (bytes_rxd as f64) * 0.1;
+                        moving_avg_rxd *= 0.9;
+                        moving_avg_rxd += (bytes_rxd as f64) * 0.1;
                     }
 
-                    println!("{} bytes/sec\t{:0.02} bytes/sec (avg)", bytes_rxd, moving_avg);
+                    if moving_avg_dec <= 0.0 {
+                        moving_avg_dec = bytes_dec as f64;
+                    } else {
+                        moving_avg_dec *= 0.9;
+                        moving_avg_dec += (bytes_dec as f64) * 0.1;
+                    }
+
+                    println!(
+                        "RX: {:0.02} KiB/sec {:0.02} KiB/sec (avg) DEC: {:0.02} KiB/sec {:0.02} KiB/sec (avg)",
+                        (bytes_rxd as f64) / 1024.0,
+                        moving_avg_rxd / 1024.0,
+                        (bytes_dec as f64) / 1024.0,
+                        moving_avg_dec / 1024.0,
+                    );
                     bytes_rxd = 0;
+                    bytes_dec = 0;
                     start = Instant::now();
                 }
                 match port.read(serial_buf.as_mut_slice()) {
                     Ok(t) => {
-                        // TODO: Verify contents
                         bytes_rxd += t;
-                        serial_buf[..t].iter().for_each(|b| {
-                            if *b != last {
-                                // println!("{:02X}", *b);
-                                last = *b;
-                            }
-                        })
+                        current.extend_from_slice(&serial_buf[..t]);
                     },
                     Err(ref e) if e.kind() == io::ErrorKind::TimedOut => (),
                     Err(e) => {
                         eprintln!("{:?}", e);
                         ::std::process::exit(1);
                     },
+                }
+
+                if let Some(pos) = current.iter().position(|b| *b == 0) {
+                    let remainder = current.split_off(pos + 1);
+                    let len = current.len();
+                    let decoded = rlercobs::decode(&current[..len-1]).unwrap();
+                    bytes_dec += decoded.len();
+                    current = remainder;
                 }
             }
         }

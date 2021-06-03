@@ -52,7 +52,17 @@ checksum = "4785bdd1c96b2a846b2bd7cc02e86b6b3dbf14e7e53446c4f54c92a361040822"
 name = "dgs-speedtest"
 version = "0.1.0"
 dependencies = [
+ "kolben",
  "serialport",
+]
+
+[[package]]
+name = "kolben"
+version = "0.0.3"
+dependencies = [
+ "postcard-cobs",
+ "rcobs",
+ "rzcobs",
 ]
 
 [[package]]
@@ -125,6 +135,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3831453b3449ceb48b6d9c7ad7c96d5ea673e9b470a1dc578c2ce6521230884c"
 
 [[package]]
+name = "postcard-cobs"
+version = "0.1.5-pre"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c68cb38ed13fd7bc9dd5db8f165b7c8d9c1a315104083a2b10f11354c2af97f"
+
+[[package]]
+name = "rcobs"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06cdc4ce376f8155e90aa043d76cd40ecd11b2ec4bb4dea713194683ae01a252"
+
+[[package]]
 name = "regex"
 version = "1.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -140,6 +162,12 @@ name = "regex-syntax"
 version = "0.6.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f497285884f3fcff424ffc933e56d7cbca511def0c9831a7f9b5f6153e3cc89b"
+
+[[package]]
+name = "rzcobs"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2af5759e4bc4858ce928073d0ebe29c82d18c04a0023bf2f312500a412f23939"
 
 [[package]]
 name = "serialport"
