@@ -37,7 +37,7 @@ fn main() {
             loop {
                 if start.elapsed() >= Duration::from_secs(1) {
                     if moving_avg <= 0.0 {
-                        moving_avg = (bytes_rxd as f64);
+                        moving_avg = bytes_rxd as f64;
                     } else {
                         moving_avg *= 0.9;
                         moving_avg += (bytes_rxd as f64) * 0.1;
@@ -53,7 +53,7 @@ fn main() {
                         bytes_rxd += t;
                         serial_buf[..t].iter().for_each(|b| {
                             if *b != last {
-                                println!("{:02X}", *b);
+                                // println!("{:02X}", *b);
                                 last = *b;
                             }
                         })

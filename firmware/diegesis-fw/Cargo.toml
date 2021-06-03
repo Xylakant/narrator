@@ -26,9 +26,15 @@ bbqueue = "0.4.12"
 heapless = "0.7.1"
 embedded-dma = "0.1.2"
 
+[dependencies.kolben]
+version = "0.0.3"
+default-features = false
+path = "../vendor/kolben"
+
 [dependencies.void]
 version = "1.0.2"
 default-features = false
+
 [dependencies.nrf52840-hal]
 version = "0.12"
 path = "../vendor/nrf-hal/nrf52840-hal"

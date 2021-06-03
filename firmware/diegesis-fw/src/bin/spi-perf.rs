@@ -34,6 +34,7 @@ use heapless::{
         Consumer,
     },
 };
+use kolben::rlercobs;
 
 type UsbDevice<'a> = usb_device::device::UsbDevice<'static, Usbd<'a>>;
 type UsbSerial<'a> = SerialPort<'static, Usbd<'a>>;
@@ -48,7 +49,7 @@ pool!(
     A: [u8; 4096]
 );
 
-static REPORT_QUEUE: BBBuffer<bbconsts::U2048> = BBBuffer(ConstBBBuffer::new());
+static ENCODED_QUEUE: BBBuffer<bbconsts::U65536> = BBBuffer(ConstBBBuffer::new());
 
 #[app(device = nrf52840_hal::pac, peripherals = true)]
 const APP: () = {
@@ -60,8 +61,8 @@ const APP: () = {
         box_prod: Producer<'static, Box<A, Init>, 64>,
         box_cons: Consumer<'static, Box<A, Init>, 64>,
 
-        rpt_prod: FrameProducer<'static, bbconsts::U2048>,
-        rpt_cons: FrameConsumer<'static, bbconsts::U2048>,
+        // rpt_prod: FrameProducer<'static, bbconsts::U2048>,
+        // rpt_cons: FrameConsumer<'static, bbconsts::U2048>,
 
         spim_p0: SpimPeriph<SPIM0>,
     }
@@ -75,7 +76,7 @@ const APP: () = {
         // NOTE: nrf52840 has a total of 256KiB of RAM.
         // We are allocating 192 KiB, or 48 data blocks, using
         // heapless pool.
-        static mut DATA_POOL: [u8; 192 * 1024] = [0u8; 192 * 1024];
+        static mut DATA_POOL: [u8; 32 * 4096] = [0u8; 32 * 4096];
         A::grow(DATA_POOL);
 
         defmt::info!("Hello, world!");
@@ -144,64 +145,20 @@ const APP: () = {
                 .max_packet_size_0(64) // (makes control transfers 8x faster)
                 .build();
 
-        let (rpt_prod, rpt_cons) = REPORT_QUEUE.try_split_framed().unwrap();
+        // let (rpt_prod, rpt_cons) = REPORT_QUEUE.try_split_framed().unwrap();
         let (box_prod, box_cons) = QUEUE.split();
 
         init::LateResources {
             usb_dev,
             serial,
             timer,
-            rpt_prod,
-            rpt_cons,
+            // rpt_prod,
+            // rpt_cons,
             box_prod,
             box_cons,
             spim_p0,
         }
     }
-
-    // #[task(binds = TIMER0, priority = 1, resources = [timer, rpt_prod, box_prod])]
-    // fn tick(mut c: tick::Context) {
-    //     static mut CUR_CHAR: u8 = b'a';
-    //     static mut BACKOFF_CUR: u8 = 0;
-    //     static mut BACKOFF_THR: u8 = 0;
-
-    //     c.resources.timer.event_compare_cc0().write(|w| w);
-
-    //     *BACKOFF_CUR = BACKOFF_CUR.saturating_sub(1);
-    //     if *BACKOFF_CUR != 0 {
-    //         return;
-    //     }
-
-    //     let mut pbox = if let Some(pb) = A::alloc() {
-    //         *BACKOFF_THR = 0;
-
-    //         // TODO: This is probably UB. We should get the raw pointer instead,
-    //         // especially when we hand it to DMA anyway
-    //         pb.freeze()
-    //     } else {
-    //         *BACKOFF_THR += 1;
-    //         *BACKOFF_CUR = *BACKOFF_THR;
-    //         defmt::warn!("No box available! Setting Backoff to {}", *BACKOFF_CUR);
-    //         return;
-    //     };
-
-    //     if *CUR_CHAR >= b'z' {
-    //         *CUR_CHAR = b'a';
-    //     } else {
-    //         *CUR_CHAR += 1;
-    //     }
-
-    //     pbox.chunks_mut(16).for_each(|c| {
-    //         c.iter_mut().for_each(|b| *b = *CUR_CHAR);
-    //         c[c.len() - 1] = b'\n';
-    //     });
-
-    //     if let Ok(()) = c.resources.box_prod.enqueue(pbox) {
-    //         // defmt::info!("Sent box!");
-    //     } else {
-    //         defmt::warn!("Failed to send box!");
-    //     }
-    // }
 
     #[task(binds = SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0, resources = [spim_p0, box_prod])]
     fn spim_p0(mut c: spim_p0::Context) {
@@ -265,7 +222,7 @@ const APP: () = {
         let mut state: UsbDeviceState = UsbDeviceState::Default;
         let mut ctr: u32 = 0;
         let mut skip_flag = false;
-        let mut wip: Option<(usize, Box<A, Init>)> = None;
+        let (mut enc_prod, mut enc_cons) = ENCODED_QUEUE.try_split().unwrap();
 
         loop {
             let new_state = c.resources.usb_dev.state();
@@ -278,6 +235,8 @@ const APP: () = {
 
                     // TODO: Probably do this later, AFTER we have established usb comms
                     // or gotten a "start sniff" command
+                    //
+                    // This starts the unstoppable SPI logging
                     rtic::pend(Interrupt::SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
                 }
             }
@@ -300,28 +259,59 @@ const APP: () = {
 
             // TODO: read?
 
-            if let Some((offset, cur_box)) = wip.take() {
-                let remaining = 4096 - offset;
-                match serial.write(&cur_box[offset..]) {
-                    Ok(n) if n >= remaining => {
-                        // We're done! Box will be released since we took it.
-                        // defmt::info!("Completed box!");
-                    }
+            let mut did_write = false;
+
+            // First: drain as many items from the box queue as possible
+            // into the encoded queue. This likely will save space if the
+            // data can be compressed at all, and will free up pboxes for
+            // the interrupt code
+            while let Some(new_box) = box_c.dequeue() {
+                // TODO: with a little more complexity, we could use split grants
+                // for a more efficient use of the encoding buffer. For now, we may
+                // end up wasting 0 <= n < 5KiB at the end of the ring, which is a
+                // whole pbox worth (7.8% of capacity ATM)
+                let wgr = if let Ok(wgr) = enc_prod.grant_exact(1024 + 4096) {
+                    wgr
+                } else {
+                    break;
+                };
+
+                let mut encoder = rlercobs::Encoder::new(
+                    FillBuf { buf: wgr, used: 0 }
+                );
+                new_box.iter().for_each(|b| {
+                    encoder.write(*b).unwrap();
+                });
+                encoder.end().unwrap();
+                encoder.writer().write(0x00).unwrap();
+                let len = encoder.writer().content_len();
+                let grant = encoder.free();
+                grant.buf.commit(len);
+            }
+
+            // Second: Drain as many bytes into the serial port as possible,
+            // in order to free up space to encode more.
+            while let Ok(rgr) = enc_cons.read() {
+                match serial.write(&rgr) {
                     Ok(n) => {
-                        // defmt::info!("Wrote {}/4096 bytes, {} remaining", n, remaining - n);
-                        // Not done yet! Put it back so we don't drop the box.
-                        wip = Some((offset + n, cur_box));
+                        did_write = true;
+                        rgr.release(n);
                     }
                     Err(UsbError::WouldBlock) => {
-                        wip = Some((offset, cur_box));
+                        rgr.release(0);
+                        break;
                     }
                     Err(e) => {
+                        rgr.release(0);
                         panic!("BAD USB WRITE - {:?}", e);
                     }
                 }
-            } else if let Some(new_box) = box_c.dequeue() {
-                // defmt::info!("Dequeued Box!");
-                wip = Some((0, new_box));
+            }
+
+            // If there was no data to write, just flush the connection to avoid
+            // holding on to small amounts of data
+            if !did_write {
+                serial.flush().ok();
             }
         }
     }
@@ -369,5 +359,33 @@ unsafe impl ReadBuffer for NopSlice {
     unsafe fn read_buffer(&self) -> (*const Self::Word, usize) {
         // crimes
         ((SRAM_UPPER - 1) as *const _, 0)
+    }
+}
+
+use bbqueue::GrantW;
+
+#[derive(Debug)]
+pub struct FillBuf {
+    buf: GrantW<'static, bbconsts::U65536>,
+    used: usize,
+}
+
+impl FillBuf {
+    fn content_len(&self) -> usize {
+        self.used
+    }
+}
+
+use rlercobs::Write as _;
+
+impl rlercobs::Write for FillBuf {
+    type Error = ();
+
+    #[inline(always)]
+    fn write(&mut self, byte: u8) -> Result<(), Self::Error> {
+        let buf_byte = self.buf.get_mut(self.used).ok_or(())?;
+        *buf_byte = byte;
+        self.used += 1;
+        Ok(())
     }
 }
