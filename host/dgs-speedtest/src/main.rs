@@ -28,6 +28,7 @@ fn main() {
     let mut start = Instant::now();
     let mut bytes_rxd = 0;
     let mut moving_avg = -1.0f64;
+    let mut last = 0u8;
 
     match port {
         Ok(mut port) => {
@@ -50,6 +51,12 @@ fn main() {
                     Ok(t) => {
                         // TODO: Verify contents
                         bytes_rxd += t;
+                        serial_buf[..t].iter().for_each(|b| {
+                            if *b != last {
+                                println!("{:02X}", *b);
+                                last = *b;
+                            }
+                        })
                     },
                     Err(ref e) if e.kind() == io::ErrorKind::TimedOut => (),
                     Err(e) => {
