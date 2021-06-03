@@ -9,6 +9,13 @@ edition = "2018"
 [dependencies.kolben]
 path = "../../firmware/vendor/kolben"
 
+[dependencies.diegesis-icd]
+path = "../../shared/diegesis-icd"
+features = ["use-std"]
+
+[dependencies.postcard]
+path = "../../firmware/vendor/postcard"
+
 [dependencies.serialport]
 git = "https://github.com/ferrous-systems/serialport-rs-hotfix.git"
 branch = "fix-usb-deprecation"

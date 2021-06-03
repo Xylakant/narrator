@@ -64,6 +64,7 @@ fn main() {
                     bytes_dec = 0;
                     start = Instant::now();
                 }
+
                 match port.read(serial_buf.as_mut_slice()) {
                     Ok(t) => {
                         bytes_rxd += t;
@@ -80,12 +81,13 @@ fn main() {
                     let remainder = current.split_off(pos + 1);
                     let len = current.len();
                     let decoded = rlercobs::decode(&current[..len-1]).unwrap();
-                    decoded.iter().for_each(|b| {
-                        if *b != last {
-                            // println!("{:02X}", *b);
-                            last = *b;
-                        }
-                    });
+                    if let Err(e) = postcard::from_bytes::<diegesis_icd::DataReport>(&decoded) {
+                        println!("{:?}", decoded);
+                        println!("Decode error: {:?}", e);
+                        println!("decoded: {}", decoded.len());
+                        println!("current: {}", current.len());
+                        println!("currentd: {:02X?}", current);
+                    }
                     bytes_dec += decoded.len();
                     current = remainder;
                 }

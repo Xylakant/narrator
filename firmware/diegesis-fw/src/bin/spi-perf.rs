@@ -37,6 +37,8 @@ use heapless::{
 use kolben::rlercobs;
 use postcard::to_rlercobs_writer;
 use serde::{Serialize, ser::Serializer};
+use diegesis_icd::{DataReport, Managed};
+use core::ops::DerefMut;
 
 type UsbDevice<'a> = usb_device::device::UsbDevice<'static, Usbd<'a>>;
 type UsbSerial<'a> = SerialPort<'static, Usbd<'a>>;
@@ -46,24 +48,6 @@ use bbqueue::{
     framed::{FrameConsumer, FrameProducer},
     BBBuffer, ConstBBBuffer,
 };
-
-#[derive(Debug, Serialize)]
-pub struct PoolBox {
-    #[serde(serialize_with = "slicer")]
-    data: Box<A, Init>,
-}
-
-use core::ops::Deref;
-
-// TODO: This could be done as an array, and not a slice, which
-// would be more efficient on the wire (2-3 bytes/message)
-fn slicer<S>(pb: &Box<A, Init>, s: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    s.serialize_bytes(pb.deref())
-}
-
 
 pool!(
     A: [u8; 4096]
@@ -80,9 +64,6 @@ const APP: () = {
 
         box_prod: Producer<'static, Box<A, Init>, 64>,
         box_cons: Consumer<'static, Box<A, Init>, 64>,
-
-        // rpt_prod: FrameProducer<'static, bbconsts::U2048>,
-        // rpt_cons: FrameConsumer<'static, bbconsts::U2048>,
 
         spim_p0: SpimPeriph<SPIM0>,
     }
@@ -172,8 +153,6 @@ const APP: () = {
             usb_dev,
             serial,
             timer,
-            // rpt_prod,
-            // rpt_cons,
             box_prod,
             box_cons,
             spim_p0,
@@ -241,7 +220,6 @@ const APP: () = {
     fn idle(mut c: idle::Context) -> ! {
         let mut state: UsbDeviceState = UsbDeviceState::Default;
         let mut ctr: u32 = 0;
-        let mut skip_flag = false;
         let (mut enc_prod, mut enc_cons) = ENCODED_QUEUE.try_split().unwrap();
 
         loop {
@@ -285,7 +263,7 @@ const APP: () = {
             // into the encoded queue. This likely will save space if the
             // data can be compressed at all, and will free up pboxes for
             // the interrupt code
-            while let Some(new_box) = box_c.dequeue() {
+            while let Some(mut new_box) = box_c.dequeue() {
                 // TODO: with a little more complexity, we could use split grants
                 // for a more efficient use of the encoding buffer. For now, we may
                 // end up wasting 0 <= n < 5KiB at the end of the ring, which is a
@@ -297,10 +275,11 @@ const APP: () = {
                 };
 
                 let fbuf = to_rlercobs_writer(
-                    &PoolBox { data: new_box },
+                    &DataReport { timestamp: 0x01020304, payload: Managed::Borrowed(new_box.deref_mut()) },
                     FillBuf { buf: wgr, used: 0 }
                 ).unwrap();
                 let len = fbuf.content_len();
+                defmt::info!("Len encoded: {}", len);
                 fbuf.buf.commit(len);
             }
 

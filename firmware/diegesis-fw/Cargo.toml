@@ -40,6 +40,10 @@ path = "../vendor/kolben"
 [dependencies.postcard]
 path = "../vendor/postcard"
 
+[dependencies.diegesis-icd]
+path = "../../shared/diegesis-icd"
+default-features = false
+
 [dependencies.void]
 version = "1.0.2"
 default-features = false
