@@ -38,7 +38,7 @@ fn main() {
             let mut serial_buf: Vec<u8> = vec![0; 1000];
             println!("Receiving data on {}:", &dgs_port);
             loop {
-                if start.elapsed() >= Duration::from_secs(1) {
+                if start.elapsed() >= Duration::from_millis(250) {
                     if moving_avg_rxd <= 0.0 {
                         moving_avg_rxd = bytes_rxd as f64;
                     } else {
@@ -55,10 +55,10 @@ fn main() {
 
                     println!(
                         "RX: {:0.02} KiB/sec {:0.02} KiB/sec (avg) DEC: {:0.02} KiB/sec {:0.02} KiB/sec (avg)",
-                        (bytes_rxd as f64) / 1024.0,
-                        moving_avg_rxd / 1024.0,
-                        (bytes_dec as f64) / 1024.0,
-                        moving_avg_dec / 1024.0,
+                        4.0 * (bytes_rxd as f64) / 1024.0,
+                        4.0 * moving_avg_rxd / 1024.0,
+                        4.0 * (bytes_dec as f64) / 1024.0,
+                        4.0 * moving_avg_dec / 1024.0,
                     );
                     bytes_rxd = 0;
                     bytes_dec = 0;

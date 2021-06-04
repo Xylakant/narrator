@@ -1,22 +1,21 @@
 #![no_main]
 #![no_std]
 
-use embedded_hal::timer::CountDown;
+use diegesis_fw::FillBuf;
+use diegesis_fw::spim_src::SpimSrc;
 use diegesis_fw as _;
 
 use nrf52840_hal::pac::Interrupt;
-use nrf52840_hal::target_constants::SRAM_UPPER;
 use nrf52840_hal::{
     clocks::{Clocks, ExternalOscillator, Internal, LfOscStopped},
     gpio::{
         p0::Parts as P0Parts,
         p1::Parts as P1Parts,
-        Input, Level, Output, Pin, PullUp, PushPull,
+        Level,
     },
-    pac::{TIMER0, SPIM0},
-    timer::{Instance as TimerInstance, Periodic, Timer},
+    pac::{SPIM0, SPIM1, SPIM2, SPIM3},
     usbd::Usbd,
-    spim::{Frequency, Pins as SpimPins, Spim, TransferSplit, PendingSplit, MODE_0, Instance},
+    spim::{Frequency, Pins as SpimPins, Spim, MODE_0},
 };
 use rtic::app;
 use usb_device::{bus::UsbBusAllocator, class::UsbClass as _, device::UsbDeviceState, prelude::*};
@@ -28,61 +27,129 @@ use heapless::{
         Box,
         Pool
     },
-    spsc::{
-        Queue,
-        Producer,
-        Consumer,
-    },
+    mpmc::MpMcQueue,
 };
-use kolben::rlercobs;
 use postcard::to_rlercobs_writer;
-use serde::{Serialize, ser::Serializer};
 use diegesis_icd::{DataReport, Managed};
 use core::ops::DerefMut;
+use core::sync::atomic::AtomicU32;
+use core::sync::atomic::Ordering;
 
 type UsbDevice<'a> = usb_device::device::UsbDevice<'static, Usbd<'a>>;
 type UsbSerial<'a> = SerialPort<'static, Usbd<'a>>;
 
 use bbqueue::{
     consts as bbconsts,
-    framed::{FrameConsumer, FrameProducer},
     BBBuffer, ConstBBBuffer,
 };
+use diegesis_fw::spim_src::SpimPeriph;
 
 pool!(
     A: [u8; 4096]
 );
 
 static ENCODED_QUEUE: BBBuffer<bbconsts::U65536> = BBBuffer(ConstBBBuffer::new());
+static POOL_QUEUE: MpMcQueue<Box<A, Init>, 32> = MpMcQueue::new();
+
+use groundhog::RollingTimer;
+use diegesis_fw::groundhog_nrf52::GlobalRollingTimer;
+
+// TODO
+// * Get timer up and going
+// * Count each interrupts/sec w/ Atomic
+// * Count idle loops/sec
+// * Average time in interrupts?
+// * Bench rlercobs/postcard?
+// * Count bytes/stream on bench app
+
+use defmt::Format;
+
+
+struct Profiler {
+    spim_p0_ints: AtomicU32,
+    spim_p1_ints: AtomicU32,
+    spim_p2_ints: AtomicU32,
+    spim_p3_ints: AtomicU32,
+    usb_writes: AtomicU32,
+    report_sers: AtomicU32,
+    bbq_push_bytes: AtomicU32,
+    bbq_pull_bytes: AtomicU32,
+    idle_loop_iters: AtomicU32,
+}
+
+#[derive(Format)]
+struct Report {
+    spim_p0_ints: u32,
+    spim_p1_ints: u32,
+    spim_p2_ints: u32,
+    spim_p3_ints: u32,
+    usb_writes: u32,
+    report_sers: u32,
+    bbq_push_bytes: u32,
+    bbq_pull_bytes: u32,
+    idle_loop_iters: u32,
+}
+
+impl Profiler {
+    const fn new() -> Self {
+        Self {
+            spim_p0_ints: AtomicU32::new(0),
+            spim_p1_ints: AtomicU32::new(0),
+            spim_p2_ints: AtomicU32::new(0),
+            spim_p3_ints: AtomicU32::new(0),
+            usb_writes: AtomicU32::new(0),
+            report_sers: AtomicU32::new(0),
+            bbq_push_bytes: AtomicU32::new(0),
+            bbq_pull_bytes: AtomicU32::new(0),
+            idle_loop_iters: AtomicU32::new(0),
+        }
+    }
+
+    fn clear_and_report(&self) -> Report {
+        Report {
+            spim_p0_ints: self.spim_p0_ints.swap(0, Ordering::SeqCst),
+            spim_p1_ints: self.spim_p1_ints.swap(0, Ordering::SeqCst),
+            spim_p2_ints: self.spim_p2_ints.swap(0, Ordering::SeqCst),
+            spim_p3_ints: self.spim_p3_ints.swap(0, Ordering::SeqCst),
+            usb_writes: self.usb_writes.swap(0, Ordering::SeqCst),
+            report_sers: self.report_sers.swap(0, Ordering::SeqCst),
+            bbq_pull_bytes: self.bbq_pull_bytes.swap(0, Ordering::SeqCst),
+            bbq_push_bytes: self.bbq_push_bytes.swap(0, Ordering::SeqCst),
+            idle_loop_iters: self.idle_loop_iters.swap(0, Ordering::SeqCst),
+        }
+    }
+}
+
+static PROFILER: Profiler = Profiler::new();
+
 
 #[app(device = nrf52840_hal::pac, peripherals = true)]
 const APP: () = {
     struct Resources {
         usb_dev: UsbDevice<'static>,
         serial: UsbSerial<'static>,
-        timer: Timer<TIMER0, Periodic>,
-
-        box_prod: Producer<'static, Box<A, Init>, 64>,
-        box_cons: Consumer<'static, Box<A, Init>, 64>,
-
-        spim_p0: SpimPeriph<SPIM0>,
+        spim_p0: SpimSrc<SPIM0, A, 32>,
+        spim_p1: SpimSrc<SPIM1, A, 32>,
+        spim_p2: SpimSrc<SPIM2, A, 32>,
+        spim_p3: SpimSrc<SPIM3, A, 32>,
     }
 
     #[init]
     fn init(ctx: init::Context) -> init::LateResources {
         static mut CLOCKS: Option<Clocks<ExternalOscillator, Internal, LfOscStopped>> = None;
         static mut USB_BUS: Option<UsbBusAllocator<Usbd<'static>>> = None;
-        static mut QUEUE: Queue<Box<A, Init>, 64> = Queue::new();
+        static mut DATA_POOL: [u8; 32 * 4096] = [0u8; 32 * 4096];
+
+        let board = ctx.device;
+        board.NVMC.icachecnf.write(|w| w.cacheen().set_bit());
+        cortex_m::asm::isb();
 
         // NOTE: nrf52840 has a total of 256KiB of RAM.
         // We are allocating 192 KiB, or 48 data blocks, using
         // heapless pool.
-        static mut DATA_POOL: [u8; 32 * 4096] = [0u8; 32 * 4096];
         A::grow(DATA_POOL);
 
         defmt::info!("Hello, world!");
-
-        let board = ctx.device;
 
         while !board
             .POWER
@@ -104,14 +171,32 @@ const APP: () = {
         let clocks = Clocks::new(board.CLOCK);
         let clocks = clocks.enable_ext_hfosc();
 
-        let mut timer = Timer::periodic(board.TIMER0);
+        GlobalRollingTimer::init(board.TIMER0);
         let usbd = board.USBD;
         let gpios_p0 = P0Parts::new(board.P0);
         let gpios_p1 = P1Parts::new(board.P1);
 
-        let spim_pins = SpimPins {
+        let spim_pins_0 = SpimPins {
             sck: gpios_p1.p1_01.into_push_pull_output(Level::Low).degrade(),
             miso: Some(gpios_p0.p0_11.into_floating_input().degrade()),
+            mosi: None,
+        };
+
+        let spim_pins_1 = SpimPins {
+            sck: gpios_p1.p1_02.into_push_pull_output(Level::Low).degrade(),
+            miso: Some(gpios_p1.p1_03.into_floating_input().degrade()),
+            mosi: None,
+        };
+
+        let spim_pins_2 = SpimPins {
+            sck: gpios_p1.p1_04.into_push_pull_output(Level::Low).degrade(),
+            miso: Some(gpios_p1.p1_05.into_floating_input().degrade()),
+            mosi: None,
+        };
+
+        let spim_pins_3 = SpimPins {
+            sck: gpios_p1.p1_06.into_push_pull_output(Level::Low).degrade(),
+            miso: Some(gpios_p1.p1_07.into_floating_input().degrade()),
             mosi: None,
         };
 
@@ -125,11 +210,44 @@ const APP: () = {
              .started().set_bit()
         });
 
-        let spim = Spim::new(board.SPIM0, spim_pins, Frequency::M2, MODE_0, 0x00);
-        let spim_p0 = SpimPeriph::Idle(spim);
+        // TODO: This probably should be dynamic
+        board.SPIM1.shorts.modify(|_r, w| {
+            w.end_start().set_bit()
+        });
+        board.SPIM1.intenset.modify(|_r, w| {
+            w.stopped().set_bit()
+             .end().set_bit()
+             .started().set_bit()
+        });
 
-        // timer.enable_interrupt();
-        timer.start(Timer::<TIMER0, Periodic>::TICKS_PER_SECOND / 200);
+        // TODO: This probably should be dynamic
+        board.SPIM2.shorts.modify(|_r, w| {
+            w.end_start().set_bit()
+        });
+        board.SPIM2.intenset.modify(|_r, w| {
+            w.stopped().set_bit()
+             .end().set_bit()
+             .started().set_bit()
+        });
+
+        // TODO: This probably should be dynamic
+        board.SPIM3.shorts.modify(|_r, w| {
+            w.end_start().set_bit()
+        });
+        board.SPIM3.intenset.modify(|_r, w| {
+            w.stopped().set_bit()
+             .end().set_bit()
+             .started().set_bit()
+        });
+
+        let spim0 = Spim::new(board.SPIM0, spim_pins_0, Frequency::M4, MODE_0, 0x00);
+        let spim_p0 = SpimPeriph::Idle(spim0);
+        let spim1 = Spim::new(board.SPIM1, spim_pins_1, Frequency::M4, MODE_0, 0x00);
+        let spim_p1 = SpimPeriph::Idle(spim1);
+        let spim2 = Spim::new(board.SPIM2, spim_pins_2, Frequency::M4, MODE_0, 0x00);
+        let spim_p2 = SpimPeriph::Idle(spim2);
+        let spim3 = Spim::new(board.SPIM3, spim_pins_3, Frequency::M4, MODE_0, 0x00);
+        let spim_p3 = SpimPeriph::Idle(spim3);
 
         *CLOCKS = Some(clocks);
         let clocks = CLOCKS.as_ref().unwrap();
@@ -146,83 +264,76 @@ const APP: () = {
                 .max_packet_size_0(64) // (makes control transfers 8x faster)
                 .build();
 
-        // let (rpt_prod, rpt_cons) = REPORT_QUEUE.try_split_framed().unwrap();
-        let (box_prod, box_cons) = QUEUE.split();
-
         init::LateResources {
             usb_dev,
             serial,
-            timer,
-            box_prod,
-            box_cons,
-            spim_p0,
+            spim_p0: SpimSrc::new(spim_p0, &POOL_QUEUE),
+            spim_p1: SpimSrc::new(spim_p1, &POOL_QUEUE),
+            spim_p2: SpimSrc::new(spim_p2, &POOL_QUEUE),
+            spim_p3: SpimSrc::new(spim_p3, &POOL_QUEUE),
         }
     }
 
-    #[task(binds = SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0, resources = [spim_p0, box_prod])]
-    fn spim_p0(mut c: spim_p0::Context) {
-        // First clear and store events
-        let stopped;
-
-        {
-            // SAFETY: FIXME
-            let spim0 = unsafe { &*SPIM0::ptr() };
-
-            stopped = spim0.events_stopped.read().events_stopped().bit_is_set();
-
-            if stopped {
-                spim0.events_stopped.write(|w| w.events_stopped().clear_bit());
-            }
+    #[task(binds = SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0, resources = [spim_p0])]
+    fn spim_p0(c: spim_p0::Context) {
+        PROFILER.spim_p0_ints.fetch_add(1, Ordering::SeqCst);
+        // TODO: removeme
+        unsafe {
+            (&*SPIM0::ptr()).events_stopped.write(|w| {
+                w.events_stopped().clear_bit()
+            });
         }
-
-        // WE TOTALLY DON'T HAVE TWO REFERENCES LIVE AT THE
-        // SAME TIME. SHHHHHH
-        let port = c.resources.spim_p0;
-        let new_state = match port.take() {
-            SpimPeriph::Idle(p) => {
-                assert!(!(stopped), "blerp");
-
-                let pbox = A::alloc().unwrap().freeze();
-                let txfr = p.dma_transfer_split(NopSlice, pbox).map_err(drop).unwrap();
-
-                SpimPeriph::OnePending(txfr)
-            }
-            SpimPeriph::OnePending(mut ts) => {
-                let pbox = A::alloc().unwrap().freeze();
-                let p_txfr = ts.enqueue_next_transfer(NopSlice, pbox).map_err(drop).unwrap();
-
-                SpimPeriph::TwoPending {
-                    transfer: ts,
-                    pending: p_txfr,
-                }
-            }
-            SpimPeriph::TwoPending { mut transfer, pending } => {
-                assert!(transfer.is_done());
-                let (_txb, rxb, one) = transfer.exchange_transfer_wait(pending);
-
-                if let Ok(()) = c.resources.box_prod.enqueue(rxb) {
-                    // defmt::info!("Sent box!");
-                } else {
-                    defmt::warn!("Failed to send box!");
-                }
-
-                SpimPeriph::OnePending(one)
-            }
-            SpimPeriph::Unstable => {
-                defmt::panic!("SPIM Error!");
-            }
-        };
-
-        *port = new_state;
+        c.resources.spim_p0.poll();
     }
 
-    #[idle(resources = [usb_dev, serial, box_cons])]
+    #[task(binds = SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1, resources = [spim_p1])]
+    fn spim_p1(c: spim_p1::Context) {
+        PROFILER.spim_p1_ints.fetch_add(1, Ordering::SeqCst);
+        // TODO: removeme
+        unsafe {
+            (&*SPIM1::ptr()).events_stopped.write(|w| {
+                w.events_stopped().clear_bit()
+            });
+        }
+        c.resources.spim_p1.poll();
+    }
+
+    #[task(binds = SPIM2_SPIS2_SPI2, resources = [spim_p2])]
+    fn spim_p2(c: spim_p2::Context) {
+        PROFILER.spim_p2_ints.fetch_add(1, Ordering::SeqCst);
+        // TODO: removeme
+        unsafe {
+            (&*SPIM2::ptr()).events_stopped.write(|w| {
+                w.events_stopped().clear_bit()
+            });
+        }
+        c.resources.spim_p2.poll();
+    }
+
+    #[task(binds = SPIM3, resources = [spim_p3])]
+    fn spim_p3(c: spim_p3::Context) {
+        PROFILER.spim_p3_ints.fetch_add(1, Ordering::SeqCst);
+        // TODO: removeme
+        unsafe {
+            (&*SPIM3::ptr()).events_stopped.write(|w| {
+                w.events_stopped().clear_bit()
+            });
+        }
+        c.resources.spim_p3.poll();
+    }
+
+    #[idle(resources = [usb_dev, serial])]
     fn idle(mut c: idle::Context) -> ! {
         let mut state: UsbDeviceState = UsbDeviceState::Default;
-        let mut ctr: u32 = 0;
+        let timer = GlobalRollingTimer::new();
         let (mut enc_prod, mut enc_cons) = ENCODED_QUEUE.try_split().unwrap();
+        let mut oneshot = false;
+
+        let mut start = timer.get_ticks();
+        let mut last_profile = start;
 
         loop {
+            PROFILER.idle_loop_iters.fetch_add(1, Ordering::SeqCst);
             let new_state = c.resources.usb_dev.state();
             if new_state != state {
                 defmt::info!("State change!");
@@ -230,17 +341,10 @@ const APP: () = {
 
                 if new_state == UsbDeviceState::Configured {
                     defmt::info!("Configured!");
-
-                    // TODO: Probably do this later, AFTER we have established usb comms
-                    // or gotten a "start sniff" command
-                    //
-                    // This starts the unstoppable SPI logging
-                    rtic::pend(Interrupt::SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
                 }
             }
 
             let usb_d = &mut c.resources.usb_dev;
-            let box_c = &mut c.resources.box_cons;
             let serial = &mut c.resources.serial;
 
             usb_poll(usb_d, serial);
@@ -249,51 +353,61 @@ const APP: () = {
                 continue;
             }
 
-            ctr = ctr.wrapping_add(1);
+            if !oneshot && timer.millis_since(start) > 3000 {
+                defmt::warn!("Fire!");
+                // TODO: Probably do this later, AFTER we have established usb comms
+                // or gotten a "start sniff" command
+                //
+                // This starts the unstoppable SPI logging
+                rtic::pend(Interrupt::SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
+                rtic::pend(Interrupt::SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1);
+                rtic::pend(Interrupt::SPIM2_SPIS2_SPI2);
+                rtic::pend(Interrupt::SPIM3);
+                oneshot = true;
+            }
 
-            if (ctr % 1_000_000) == 0 {
-                defmt::info!("tick1m - usb");
+            if timer.millis_since(last_profile) >= 1000 {
+                let rpt = PROFILER.clear_and_report();
+                defmt::info!("{}", rpt);
+                last_profile = timer.get_ticks();
             }
 
             // TODO: read?
 
             let mut did_write = false;
+            let loop_start = timer.get_ticks();
 
-            // First: drain as many items from the box queue as possible
-            // into the encoded queue. This likely will save space if the
-            // data can be compressed at all, and will free up pboxes for
-            // the interrupt code
-            while let Some(mut new_box) = box_c.dequeue() {
-                // TODO: with a little more complexity, we could use split grants
-                // for a more efficient use of the encoding buffer. For now, we may
-                // end up wasting 0 <= n < 5KiB at the end of the ring, which is a
-                // whole pbox worth (7.8% of capacity ATM)
-                let wgr = if let Ok(wgr) = enc_prod.grant_exact(1024 + 4096) {
-                    wgr
-                } else {
-                    break;
-                };
-
-                let fbuf = to_rlercobs_writer(
-                    &DataReport { timestamp: 0x01020304, payload: Managed::Borrowed(new_box.deref_mut()) },
-                    FillBuf { buf: wgr, used: 0 }
-                ).unwrap();
-                let len = fbuf.content_len();
-                defmt::info!("Len encoded: {}", len);
-                fbuf.buf.commit(len);
-            }
+            // TODO: with a little more complexity, we could use split grants
+            // for a more efficient use of the encoding buffer. For now, we may
+            // end up wasting 0 <= n < 5KiB at the end of the ring, which is a
+            // whole pbox worth (7.8% of capacity ATM)
+            if let Ok(wgr) = enc_prod.grant_exact(1024 + 4096) {
+                if let Some(mut new_box) = POOL_QUEUE.dequeue() {
+                    PROFILER.report_sers.fetch_add(1, Ordering::SeqCst);
+                    let fbuf = to_rlercobs_writer(
+                        // TODO(AJM): We should be sending DataReports through the queue,
+                        // not just boxes, so the senders can generate the metadata
+                        &DataReport { timestamp: 0x01020304, payload: Managed::Borrowed(new_box.deref_mut()) },
+                        FillBuf { buf: wgr, used: 0 }
+                    ).unwrap();
+                    let len = fbuf.content_len();
+                    fbuf.buf.commit(len);
+                    PROFILER.bbq_push_bytes.fetch_add(len as u32, Ordering::SeqCst);
+                }
+            };
 
             // Second: Drain as many bytes into the serial port as possible,
             // in order to free up space to encode more.
-            while let Ok(rgr) = enc_cons.read() {
+            if let Ok(rgr) = enc_cons.read() {
                 match serial.write(&rgr) {
                     Ok(n) => {
+                        PROFILER.usb_writes.fetch_add(1, Ordering::SeqCst);
                         did_write = true;
+                        PROFILER.bbq_pull_bytes.fetch_add(n as u32, Ordering::SeqCst);
                         rgr.release(n);
                     }
                     Err(UsbError::WouldBlock) => {
                         rgr.release(0);
-                        break;
                     }
                     Err(e) => {
                         rgr.release(0);
@@ -304,9 +418,9 @@ const APP: () = {
 
             // If there was no data to write, just flush the connection to avoid
             // holding on to small amounts of data
-            if !did_write {
-                serial.flush().ok();
-            }
+            // if !did_write {
+            //     serial.flush().ok();
+            // }
         }
     }
 };
@@ -314,72 +428,5 @@ const APP: () = {
 fn usb_poll(usb_dev: &mut UsbDevice, serial: &mut UsbSerial) {
     if usb_dev.poll(&mut [serial]) {
         serial.poll();
-    }
-}
-
-type PBox<T> = heapless::pool::singleton::Box<T>;
-
-pub enum SpimPeriph<S>
-where
-    S: Instance + Send,
-{
-    Idle(Spim<S>),
-    OnePending(TransferSplit<S, NopSlice, PBox<A>>),
-    TwoPending {
-        transfer: TransferSplit<S, NopSlice, PBox<A>>,
-        pending: PendingSplit<S, NopSlice, PBox<A>>,
-    },
-    Unstable,
-}
-
-impl<S> SpimPeriph<S>
-where
-    S: Instance + Send,
-{
-    fn take(&mut self) -> Self {
-        let mut new = SpimPeriph::Unstable;
-        core::mem::swap(self, &mut new);
-        new
-    }
-}
-
-use embedded_dma::ReadBuffer;
-
-pub struct NopSlice;
-
-unsafe impl ReadBuffer for NopSlice {
-    type Word = u8;
-
-    unsafe fn read_buffer(&self) -> (*const Self::Word, usize) {
-        // crimes
-        ((SRAM_UPPER - 1) as *const _, 0)
-    }
-}
-
-use bbqueue::GrantW;
-
-#[derive(Debug)]
-pub struct FillBuf {
-    buf: GrantW<'static, bbconsts::U65536>,
-    used: usize,
-}
-
-impl FillBuf {
-    fn content_len(&self) -> usize {
-        self.used
-    }
-}
-
-use rlercobs::Write as _;
-
-impl rlercobs::Write for FillBuf {
-    type Error = ();
-
-    #[inline(always)]
-    fn write(&mut self, byte: u8) -> Result<(), Self::Error> {
-        let buf_byte = self.buf.get_mut(self.used).ok_or(())?;
-        *buf_byte = byte;
-        self.used += 1;
-        Ok(())
     }
 }

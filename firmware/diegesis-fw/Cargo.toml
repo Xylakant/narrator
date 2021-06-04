@@ -25,6 +25,7 @@ nb = "1.0.0"
 bbqueue = "0.4.12"
 heapless = "0.7.1"
 embedded-dma = "0.1.2"
+groundhog = "0.1.0"
 
 
 [dependencies.serde]

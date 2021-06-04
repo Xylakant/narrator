@@ -10,8 +10,6 @@ use serde::{
     de::{Deserializer, Visitor, SeqAccess},
 };
 
-use core::fmt::Formatter;
-
 #[derive(Serialize, Debug)]
 #[cfg_attr(feature = "use-std", derive(Deserialize))]
 pub struct DataReport<'a> {
@@ -40,7 +38,7 @@ pub struct BVisitor;
 impl<'de> Visitor<'de> for BVisitor {
     type Value = Managed<'static, [u8; 4096]>;
 
-    fn expecting(&self, _: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+    fn expecting(&self, _: &mut core::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         Ok(())
     }
 

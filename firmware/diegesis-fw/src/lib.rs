@@ -3,9 +3,13 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use defmt_rtt as _; // global logger
+use kolben::rlercobs;
 use nrf52840_hal as _; // memory layout
 
+use nrf52840_hal::target_constants::SRAM_UPPER;
 use panic_probe as _;
+pub mod spim_src;
+pub mod groundhog_nrf52;
 
 // same panicking *behavior* as `panic-probe` but doesn't print a panic message
 // this prevents the panic message being printed *twice* when `defmt::panic` is invoked
@@ -26,5 +30,47 @@ defmt::timestamp!("{=usize}", {
 pub fn exit() -> ! {
     loop {
         cortex_m::asm::bkpt();
+    }
+}
+
+
+pub type PBox<T> = heapless::pool::singleton::Box<T>;
+
+use embedded_dma::ReadBuffer;
+
+pub struct NopSlice;
+
+unsafe impl ReadBuffer for NopSlice {
+    type Word = u8;
+
+    unsafe fn read_buffer(&self) -> (*const Self::Word, usize) {
+        // crimes
+        ((SRAM_UPPER - 1) as *const _, 0)
+    }
+}
+
+use bbqueue::{GrantW, consts as bbconsts};
+
+#[derive(Debug)]
+pub struct FillBuf {
+    pub buf: GrantW<'static, bbconsts::U65536>,
+    pub used: usize,
+}
+
+impl FillBuf {
+    pub fn content_len(&self) -> usize {
+        self.used
+    }
+}
+
+impl rlercobs::Write for FillBuf {
+    type Error = ();
+
+    #[inline(always)]
+    fn write(&mut self, byte: u8) -> Result<(), Self::Error> {
+        let buf_byte = self.buf.get_mut(self.used).ok_or(())?;
+        *buf_byte = byte;
+        self.used += 1;
+        Ok(())
     }
 }
