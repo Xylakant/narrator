@@ -156,9 +156,6 @@ const APP: () = {
         };
 
         // TODO: This probably should be dynamic
-        board.SPIM0.shorts.modify(|_r, w| {
-            w.end_start().set_bit()
-        });
         board.SPIM0.intenset.modify(|_r, w| {
             w.stopped().set_bit()
              .end().set_bit()
@@ -166,9 +163,6 @@ const APP: () = {
         });
 
         // TODO: This probably should be dynamic
-        board.SPIM1.shorts.modify(|_r, w| {
-            w.end_start().set_bit()
-        });
         board.SPIM1.intenset.modify(|_r, w| {
             w.stopped().set_bit()
              .end().set_bit()
@@ -176,9 +170,6 @@ const APP: () = {
         });
 
         // TODO: This probably should be dynamic
-        board.SPIM2.shorts.modify(|_r, w| {
-            w.end_start().set_bit()
-        });
         board.SPIM2.intenset.modify(|_r, w| {
             w.stopped().set_bit()
              .end().set_bit()
@@ -186,9 +177,6 @@ const APP: () = {
         });
 
         // TODO: This probably should be dynamic
-        board.SPIM3.shorts.modify(|_r, w| {
-            w.end_start().set_bit()
-        });
         board.SPIM3.intenset.modify(|_r, w| {
             w.stopped().set_bit()
              .end().set_bit()
@@ -238,48 +226,24 @@ const APP: () = {
     #[task(binds = SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0, resources = [spim_p0])]
     fn spim_p0(c: spim_p0::Context) {
         PROFILER.spim_p0_ints();
-        // TODO: removeme
-        unsafe {
-            (&*SPIM0::ptr()).events_stopped.write(|w| {
-                w.events_stopped().clear_bit()
-            });
-        }
         c.resources.spim_p0.poll(&FUSE);
     }
 
     #[task(binds = SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1, resources = [spim_p1])]
     fn spim_p1(c: spim_p1::Context) {
         PROFILER.spim_p1_ints();
-        // TODO: removeme
-        unsafe {
-            (&*SPIM1::ptr()).events_stopped.write(|w| {
-                w.events_stopped().clear_bit()
-            });
-        }
         c.resources.spim_p1.poll(&FUSE);
     }
 
     #[task(binds = SPIM2_SPIS2_SPI2, resources = [spim_p2])]
     fn spim_p2(c: spim_p2::Context) {
         PROFILER.spim_p2_ints();
-        // TODO: removeme
-        unsafe {
-            (&*SPIM2::ptr()).events_stopped.write(|w| {
-                w.events_stopped().clear_bit()
-            });
-        }
         c.resources.spim_p2.poll(&FUSE);
     }
 
     #[task(binds = SPIM3, resources = [spim_p3])]
     fn spim_p3(c: spim_p3::Context) {
         PROFILER.spim_p3_ints();
-        // TODO: removeme
-        unsafe {
-            (&*SPIM3::ptr()).events_stopped.write(|w| {
-                w.events_stopped().clear_bit()
-            });
-        }
         c.resources.spim_p3.poll(&FUSE);
     }
 

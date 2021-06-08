@@ -3,6 +3,8 @@ use core::sync::atomic::Ordering;
 
 use embedded_dma::WriteBuffer;
 use nrf52840_hal::Spim;
+use nrf52840_hal::pac::{SPIM0, SPIM1, SPIM2, SPIM3};
+use nrf52840_hal::pac::spim0;
 use nrf52840_hal::spim::Instance;
 use nrf52840_hal::spim::PendingSplit;
 use nrf52840_hal::spim::TransferSplit;
@@ -14,7 +16,7 @@ type PBox<POOL> = heapless::pool::singleton::Box<POOL, Init>;
 
 pub enum SpimPeriph<S, POOL>
 where
-    S: Instance + Send,
+    S: Instance + Shame + Send,
     POOL: heapless::pool::singleton::Pool + 'static,
     PBox<POOL>: WriteBuffer<Word = u8>
 {
@@ -31,7 +33,7 @@ where
 
 impl<S, POOL> SpimPeriph<S, POOL>
 where
-    S: Instance + Send,
+    S: Instance + Shame + Send,
     POOL: heapless::pool::singleton::Pool + 'static,
     PBox<POOL>: WriteBuffer<Word = u8>
 {
@@ -42,9 +44,37 @@ where
     }
 }
 
+pub trait Shame {
+    fn shame_ptr() -> *const spim0::RegisterBlock;
+}
+
+impl Shame for SPIM0 {
+    fn shame_ptr() -> *const spim0::RegisterBlock {
+        SPIM0::ptr()
+    }
+}
+
+impl Shame for SPIM1 {
+    fn shame_ptr() -> *const spim0::RegisterBlock {
+        SPIM1::ptr()
+    }
+}
+
+impl Shame for SPIM2 {
+    fn shame_ptr() -> *const spim0::RegisterBlock {
+        SPIM2::ptr()
+    }
+}
+
+impl Shame for SPIM3 {
+    fn shame_ptr() -> *const spim0::RegisterBlock {
+        SPIM3::ptr()
+    }
+}
+
 pub struct SpimSrc<T, POOL, const N: usize>
 where
-    T: Instance + Send,
+    T: Instance + Shame + Send,
     POOL: heapless::pool::singleton::Pool + 'static,
     PBox<POOL>: WriteBuffer<Word = u8>
 {
@@ -54,7 +84,7 @@ where
 
 impl<T, POOL, const N: usize> SpimSrc<T, POOL, N>
 where
-    T: Instance + Send,
+    T: Instance + Shame + Send,
     POOL: heapless::pool::singleton::Pool + 'static,
     PBox<POOL>: WriteBuffer<Word = u8>,
     <POOL as heapless::pool::singleton::Pool>::Data: AsRef<[u8]>,
@@ -68,7 +98,16 @@ where
             pool_q,
         }
     }
+
     pub fn poll(&mut self, fuse: &AtomicBool) {
+        // TODO: removeme
+        unsafe {
+            (&*T::shame_ptr()).events_stopped.write(|w| {
+                w.events_stopped().clear_bit()
+            });
+        }
+
+        let mut started_fixup = false;
         let fuse_blown = fuse.load(Ordering::SeqCst);
         let new_state = match self.periph.take() {
             SpimPeriph::Idle(p) if fuse_blown => {
@@ -87,6 +126,13 @@ where
                 }
             }
             SpimPeriph::OnePending(mut ts) if fuse_blown => {
+                // Manually clear the started event
+                unsafe {
+                    (&*T::shame_ptr()).events_started.write(|w| {
+                        w.events_started().clear_bit()
+                    });
+                }
+
                 // We shouldn't enqueue a new transfer, the fuse is blown.
                 //
                 // Attempt to finish any current transfer though, since we already
@@ -108,6 +154,12 @@ where
             SpimPeriph::OnePending(mut ts) => {
                 if let Some(pbox) = POOL::alloc() {
                     let pbox = pbox.freeze();
+
+                    // Enable end-to-start shortcut
+                    unsafe {
+                        (&*T::shame_ptr()).shorts.modify(|_r, w| { w.end_start().set_bit() });
+                    }
+
                     let p_txfr = ts.enqueue_next_transfer(NopSlice, pbox).map_err(drop).unwrap();
 
                     SpimPeriph::TwoPending {
@@ -123,6 +175,11 @@ where
             SpimPeriph::TwoPending { mut transfer, pending } => {
                 assert!(transfer.is_done());
                 let (_txb, rxb, one) = transfer.exchange_transfer_wait(pending);
+
+                // Disable end-to-start shortcut
+                unsafe {
+                    (&*T::shame_ptr()).shorts.modify(|_r, w| { w.end_start().clear_bit() });
+                }
 
                 if let Ok(()) = self.pool_q.enqueue(rxb) {
                     // defmt::info!("Sent box!");
