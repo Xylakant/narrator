@@ -14,7 +14,7 @@ use nrf52840_hal::{
     },
     pac::{SPIM0, SPIM1, SPIM2, SPIM3},
     usbd::Usbd,
-    spim::{Frequency, Pins as SpimPins, Spim, MODE_0},
+    spim::Frequency,
 };
 use rtic::app;
 use usb_device::{bus::UsbBusAllocator, class::UsbClass as _, device::UsbDeviceState, prelude::*};
@@ -38,7 +38,6 @@ use bbqueue::{
     consts as bbconsts,
     BBBuffer, ConstBBBuffer,
 };
-use diegesis_fw::spim_src::SpimPeriph;
 use groundhog::RollingTimer;
 use diegesis_fw::groundhog_nrf52::GlobalRollingTimer;
 use diegesis_fw::profiler;
@@ -79,6 +78,7 @@ profiler!(Profiler {
 static PROFILER: Profiler = Profiler::new();
 static FUSE: AtomicBool = AtomicBool::new(true);
 
+#[derive(Clone, Copy, Debug)]
 enum ButtonDebounce {
     StableLow,
     StableHigh,
@@ -92,40 +92,19 @@ impl ButtonDebounce {
         let mut retval = None;
 
         *self = match *self {
-            ButtonDebounce::StableHigh => {
-                if is_low {
-                    ButtonDebounce::MaybeLow(timer.get_ticks())
-                } else {
-                    ButtonDebounce::StableHigh
-                }
-            }
-            ButtonDebounce::StableLow => {
-                if is_low {
-                    ButtonDebounce::StableLow
-                } else {
-                    ButtonDebounce::MaybeHigh(timer.get_ticks())
-                }
-            }
-            ButtonDebounce::MaybeHigh(start) => {
-                if is_low {
-                    ButtonDebounce::StableLow
-                } else if timer.millis_since(start) >= 5 {
-                    retval = Some(Level::High);
-                    ButtonDebounce::StableHigh
-                } else {
-                    ButtonDebounce::MaybeHigh(start)
-                }
-            }
-            ButtonDebounce::MaybeLow(start) => {
-                if !is_low {
-                    ButtonDebounce::StableHigh
-                } else if timer.millis_since(start) >= 5 {
-                    retval = Some(Level::Low);
-                    ButtonDebounce::StableLow
-                } else {
-                    ButtonDebounce::MaybeLow(start)
-                }
-            }
+            ButtonDebounce::StableHigh if is_low => ButtonDebounce::MaybeLow(timer.get_ticks()),
+            ButtonDebounce::StableLow if !is_low => ButtonDebounce::MaybeHigh(timer.get_ticks()),
+            ButtonDebounce::MaybeHigh(_) if is_low => ButtonDebounce::StableLow,
+            ButtonDebounce::MaybeHigh(start) if timer.millis_since(start) >= 5 => {
+                retval = Some(Level::High);
+                ButtonDebounce::StableHigh
+            },
+            ButtonDebounce::MaybeLow(_) if !is_low => ButtonDebounce::StableHigh,
+            ButtonDebounce::MaybeLow(start) if timer.millis_since(start) >= 5 => {
+                retval = Some(Level::Low);
+                ButtonDebounce::StableLow
+            },
+            retain => retain
         };
 
         retval
@@ -187,69 +166,40 @@ const APP: () = {
         let gpios_p0 = P0Parts::new(board.P0);
         let gpios_p1 = P1Parts::new(board.P1);
 
-        let spim_pins_0 = SpimPins {
-            sck: gpios_p1.p1_01.into_push_pull_output(Level::Low).degrade(),
-            miso: Some(gpios_p0.p0_11.into_floating_input().degrade()), // button 1!
-            mosi: None,
-        };
+        let spim0 = SpimSrc::from_parts(
+            board.SPIM0,
+            gpios_p0.p0_11.degrade(),
+            gpios_p1.p1_01.degrade(),
+            &POOL_QUEUE,
+            Frequency::M4,
+        );
 
-        let spim_pins_1 = SpimPins {
-            sck: gpios_p1.p1_02.into_push_pull_output(Level::Low).degrade(),
-            miso: Some(gpios_p1.p1_03.into_floating_input().degrade()),
-            mosi: None,
-        };
+        let spim1 = SpimSrc::from_parts(
+            board.SPIM1,
+            gpios_p1.p1_03.degrade(),
+            gpios_p1.p1_02.degrade(),
+            &POOL_QUEUE,
+            Frequency::M4,
+        );
 
-        let spim_pins_2 = SpimPins {
-            sck: gpios_p1.p1_04.into_push_pull_output(Level::Low).degrade(),
-            miso: Some(gpios_p1.p1_05.into_floating_input().degrade()),
-            mosi: None,
-        };
+        let spim2 = SpimSrc::from_parts(
+            board.SPIM2,
+            gpios_p1.p1_05.degrade(),
+            gpios_p1.p1_04.degrade(),
+            &POOL_QUEUE,
+            Frequency::M4,
+        );
 
-        let spim_pins_3 = SpimPins {
-            sck: gpios_p1.p1_06.into_push_pull_output(Level::Low).degrade(),
-            miso: Some(gpios_p1.p1_07.into_floating_input().degrade()),
-            mosi: None,
-        };
+        let spim3 = SpimSrc::from_parts(
+            board.SPIM3,
+            gpios_p1.p1_07.degrade(),
+            gpios_p1.p1_06.degrade(),
+            &POOL_QUEUE,
+            Frequency::M4,
+        );
 
         let start_stop_btn = gpios_p0.p0_25.into_pullup_input().degrade();
         let start_stop_led = gpios_p0.p0_16.into_push_pull_output(Level::High).degrade();
-
-        // TODO: This probably should be dynamic
-        board.SPIM0.intenset.modify(|_r, w| {
-            w.stopped().set_bit()
-             .end().set_bit()
-             .started().set_bit()
-        });
-
-        // TODO: This probably should be dynamic
-        board.SPIM1.intenset.modify(|_r, w| {
-            w.stopped().set_bit()
-             .end().set_bit()
-             .started().set_bit()
-        });
-
-        // TODO: This probably should be dynamic
-        board.SPIM2.intenset.modify(|_r, w| {
-            w.stopped().set_bit()
-             .end().set_bit()
-             .started().set_bit()
-        });
-
-        // TODO: This probably should be dynamic
-        board.SPIM3.intenset.modify(|_r, w| {
-            w.stopped().set_bit()
-             .end().set_bit()
-             .started().set_bit()
-        });
-
-        let spim0 = Spim::new(board.SPIM0, spim_pins_0, Frequency::M4, MODE_0, 0x00);
-        let spim_p0 = SpimPeriph::Idle(spim0);
-        let spim1 = Spim::new(board.SPIM1, spim_pins_1, Frequency::M4, MODE_0, 0x00);
-        let spim_p1 = SpimPeriph::Idle(spim1);
-        let spim2 = Spim::new(board.SPIM2, spim_pins_2, Frequency::M4, MODE_0, 0x00);
-        let spim_p2 = SpimPeriph::Idle(spim2);
-        let spim3 = Spim::new(board.SPIM3, spim_pins_3, Frequency::M4, MODE_0, 0x00);
-        let spim_p3 = SpimPeriph::Idle(spim3);
 
         *CLOCKS = Some(clocks);
         let clocks = CLOCKS.as_ref().unwrap();
@@ -275,10 +225,10 @@ const APP: () = {
         init::LateResources {
             usb_dev,
             serial,
-            spim_p0: SpimSrc::new(spim_p0, &POOL_QUEUE),
-            spim_p1: SpimSrc::new(spim_p1, &POOL_QUEUE),
-            spim_p2: SpimSrc::new(spim_p2, &POOL_QUEUE),
-            spim_p3: SpimSrc::new(spim_p3, &POOL_QUEUE),
+            spim_p0: spim0,
+            spim_p1: spim1,
+            spim_p2: spim2,
+            spim_p3: spim3,
 
             start_stop_btn,
             start_stop_led,

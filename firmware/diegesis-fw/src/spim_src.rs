@@ -2,11 +2,16 @@ use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
 
 use embedded_dma::WriteBuffer;
+use embedded_hal::spi::MODE_0;
 use nrf52840_hal::Spim;
+use nrf52840_hal::gpio::Level;
+use nrf52840_hal::gpio::Pin;
 use nrf52840_hal::pac::{SPIM0, SPIM1, SPIM2, SPIM3};
 use nrf52840_hal::pac::spim0;
+use nrf52840_hal::spim::Frequency;
 use nrf52840_hal::spim::Instance;
 use nrf52840_hal::spim::PendingSplit;
+use nrf52840_hal::spim::Pins;
 use nrf52840_hal::spim::TransferSplit;
 use heapless::mpmc::MpMcQueue;
 use crate::NopSlice;
@@ -97,6 +102,31 @@ where
             periph,
             pool_q,
         }
+    }
+
+    pub fn from_parts<DATA, DISC>(
+        periph: T,
+        data_pin: Pin<DATA>,
+        disc_pin: Pin<DISC>,
+        pool_q: &'static MpMcQueue<PBox<POOL>, N>,
+        freq: Frequency,
+    ) -> Self {
+        let pins = Pins {
+            sck: disc_pin.into_push_pull_output(Level::Low),
+            miso: Some(data_pin.into_floating_input()),
+            mosi: None,
+        };
+
+        // TODO: This probably should be dynamic
+        periph.intenset.modify(|_r, w| {
+            w.stopped().set_bit()
+             .end().set_bit()
+             .started().set_bit()
+        });
+
+        let spim = Spim::new(periph, pins, freq, MODE_0, 0x00);
+        let spim_p = SpimPeriph::Idle(spim);
+        SpimSrc::new(spim_p, pool_q)
     }
 
     pub fn poll(&mut self, fuse: &AtomicBool) {
