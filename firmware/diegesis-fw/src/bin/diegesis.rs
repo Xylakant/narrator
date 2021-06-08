@@ -31,7 +31,7 @@ use heapless::{
 use postcard::to_rlercobs_writer;
 use diegesis_icd::{DataReport, Managed};
 use core::ops::DerefMut;
-use core::sync::atomic::AtomicU32;
+use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
 
 type UsbDevice<'a> = usb_device::device::UsbDevice<'static, Usbd<'a>>;
@@ -76,6 +76,7 @@ profiler!(Profiler {
 } => ProfilerRpt);
 
 static PROFILER: Profiler = Profiler::new();
+static FUSE: AtomicBool = AtomicBool::new(true);
 
 #[app(device = nrf52840_hal::pac, peripherals = true)]
 const APP: () = {
@@ -218,6 +219,12 @@ const APP: () = {
                 .max_packet_size_0(64) // (makes control transfers 8x faster)
                 .build();
 
+        // TODO: Remove me once we have a "start" interface!
+        rtic::pend(Interrupt::SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
+        rtic::pend(Interrupt::SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1);
+        rtic::pend(Interrupt::SPIM2_SPIS2_SPI2);
+        rtic::pend(Interrupt::SPIM3);
+
         init::LateResources {
             usb_dev,
             serial,
@@ -237,7 +244,7 @@ const APP: () = {
                 w.events_stopped().clear_bit()
             });
         }
-        c.resources.spim_p0.poll();
+        c.resources.spim_p0.poll(&FUSE);
     }
 
     #[task(binds = SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1, resources = [spim_p1])]
@@ -249,7 +256,7 @@ const APP: () = {
                 w.events_stopped().clear_bit()
             });
         }
-        c.resources.spim_p1.poll();
+        c.resources.spim_p1.poll(&FUSE);
     }
 
     #[task(binds = SPIM2_SPIS2_SPI2, resources = [spim_p2])]
@@ -261,7 +268,7 @@ const APP: () = {
                 w.events_stopped().clear_bit()
             });
         }
-        c.resources.spim_p2.poll();
+        c.resources.spim_p2.poll(&FUSE);
     }
 
     #[task(binds = SPIM3, resources = [spim_p3])]
@@ -273,7 +280,7 @@ const APP: () = {
                 w.events_stopped().clear_bit()
             });
         }
-        c.resources.spim_p3.poll();
+        c.resources.spim_p3.poll(&FUSE);
     }
 
     #[idle(resources = [usb_dev, serial])]
@@ -281,10 +288,10 @@ const APP: () = {
         let mut state: UsbDeviceState = UsbDeviceState::Default;
         let timer = GlobalRollingTimer::new();
         let (mut enc_prod, mut enc_cons) = ENCODED_QUEUE.try_split().unwrap();
-        let mut oneshot = false;
 
-        let mut start = timer.get_ticks();
+        let start = timer.get_ticks();
         let mut last_profile = start;
+        let mut fuse_timeout = None;
 
         loop {
             PROFILER.idle_loop_iters();
@@ -301,23 +308,32 @@ const APP: () = {
             let usb_d = &mut c.resources.usb_dev;
             let serial = &mut c.resources.serial;
 
+            // TODO: In the current version of nrf-usb, we need to poll the USB once
+            // per write. This is why the following code is round-robin. In the future,
+            // when a fix for this is available, we may re-consider true round-robin.
             usb_poll(usb_d, serial);
 
             if state != UsbDeviceState::Configured {
                 continue;
             }
 
-            if !oneshot && timer.millis_since(start) > 3000 {
-                defmt::warn!("Fire!");
-                // TODO: Probably do this later, AFTER we have established usb comms
-                // or gotten a "start sniff" command
-                //
-                // This starts the unstoppable SPI logging
-                rtic::pend(Interrupt::SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
-                rtic::pend(Interrupt::SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1);
-                rtic::pend(Interrupt::SPIM2_SPIS2_SPI2);
-                rtic::pend(Interrupt::SPIM3);
-                oneshot = true;
+            if fuse_timeout.is_none() && FUSE.load(Ordering::SeqCst) {
+                defmt::info!("Fuse blown! Cooling down...");
+                fuse_timeout = Some(timer.get_ticks());
+            }
+
+            if let Some(tick) = fuse_timeout.take() {
+                if timer.millis_since(tick) > 2500 {
+                    defmt::info!("Fuse restored! Clearing...");
+                    FUSE.store(false, Ordering::SeqCst);
+                    rtic::pend(Interrupt::SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
+                    rtic::pend(Interrupt::SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1);
+                    rtic::pend(Interrupt::SPIM2_SPIS2_SPI2);
+                    rtic::pend(Interrupt::SPIM3);
+                } else {
+                    // Still cooling...
+                    fuse_timeout = Some(tick);
+                }
             }
 
             if timer.millis_since(last_profile) >= 1000 {
@@ -328,13 +344,10 @@ const APP: () = {
 
             // TODO: read?
 
-            let mut did_write = false;
-            let loop_start = timer.get_ticks();
-
             // TODO: with a little more complexity, we could use split grants
             // for a more efficient use of the encoding buffer. For now, we may
             // end up wasting 0 <= n < 5KiB at the end of the ring, which is a
-            // whole pbox worth (7.8% of capacity ATM)
+            // whole pbox worth (7.8% of 64K capacity)
             if let Ok(wgr) = enc_prod.grant_exact(1024 + 4096) {
                 if let Some(mut new_box) = POOL_QUEUE.dequeue() {
                     PROFILER.report_sers();
@@ -350,13 +363,12 @@ const APP: () = {
                 }
             };
 
-            // Second: Drain as many bytes into the serial port as possible,
-            // in order to free up space to encode more.
+            // Second: Drain bytes into the serial port in order to
+            // free up space to encode more.
             if let Ok(rgr) = enc_cons.read() {
                 match serial.write(&rgr) {
                     Ok(n) => {
                         PROFILER.usb_writes();
-                        did_write = true;
                         PROFILER.bbq_pull_bytes.fetch_add(n as u32, Ordering::SeqCst);
                         rgr.release(n);
                     }
@@ -369,12 +381,6 @@ const APP: () = {
                     }
                 }
             }
-
-            // If there was no data to write, just flush the connection to avoid
-            // holding on to small amounts of data
-            // if !did_write {
-            //     serial.flush().ok();
-            // }
         }
     }
 };
