@@ -107,7 +107,6 @@ where
             });
         }
 
-        let mut started_fixup = false;
         let fuse_blown = fuse.load(Ordering::SeqCst);
         let new_state = match self.periph.take() {
             SpimPeriph::Idle(p) if fuse_blown => {
@@ -126,7 +125,8 @@ where
                 }
             }
             SpimPeriph::OnePending(mut ts) if fuse_blown => {
-                // Manually clear the started event
+                // Manually clear the started event, as we won't be
+                // clearing/processing it for the second queued write
                 unsafe {
                     (&*T::shame_ptr()).events_started.write(|w| {
                         w.events_started().clear_bit()

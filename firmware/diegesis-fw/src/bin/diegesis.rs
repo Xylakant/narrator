@@ -3,7 +3,6 @@
 
 use diegesis_fw::FillBuf;
 use diegesis_fw::spim_src::SpimSrc;
-
 use nrf52840_hal::pac::Interrupt;
 use nrf52840_hal::{
     clocks::{Clocks, ExternalOscillator, Internal, LfOscStopped},
@@ -11,6 +10,7 @@ use nrf52840_hal::{
         p0::Parts as P0Parts,
         p1::Parts as P1Parts,
         Level,
+        Pin, Input, PullUp, Output, PushPull,
     },
     pac::{SPIM0, SPIM1, SPIM2, SPIM3},
     usbd::Usbd,
@@ -33,15 +33,18 @@ use diegesis_icd::{DataReport, Managed};
 use core::ops::DerefMut;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
-
-type UsbDevice<'a> = usb_device::device::UsbDevice<'static, Usbd<'a>>;
-type UsbSerial<'a> = SerialPort<'static, Usbd<'a>>;
-
+use embedded_hal::digital::v2::{InputPin, OutputPin};
 use bbqueue::{
     consts as bbconsts,
     BBBuffer, ConstBBBuffer,
 };
 use diegesis_fw::spim_src::SpimPeriph;
+use groundhog::RollingTimer;
+use diegesis_fw::groundhog_nrf52::GlobalRollingTimer;
+use diegesis_fw::profiler;
+
+type UsbDevice<'a> = usb_device::device::UsbDevice<'static, Usbd<'a>>;
+type UsbSerial<'a> = SerialPort<'static, Usbd<'a>>;
 
 pool!(
     A: [u8; 4096]
@@ -50,8 +53,6 @@ pool!(
 static ENCODED_QUEUE: BBBuffer<bbconsts::U65536> = BBBuffer(ConstBBBuffer::new());
 static POOL_QUEUE: MpMcQueue<Box<A, Init>, 32> = MpMcQueue::new();
 
-use groundhog::RollingTimer;
-use diegesis_fw::groundhog_nrf52::GlobalRollingTimer;
 
 // TODO
 // * Get timer up and going
@@ -61,7 +62,7 @@ use diegesis_fw::groundhog_nrf52::GlobalRollingTimer;
 // * Bench rlercobs/postcard?
 // * Count bytes/stream on bench app
 
-use diegesis_fw::profiler;
+
 
 profiler!(Profiler {
     spim_p0_ints,
@@ -78,6 +79,59 @@ profiler!(Profiler {
 static PROFILER: Profiler = Profiler::new();
 static FUSE: AtomicBool = AtomicBool::new(true);
 
+enum ButtonDebounce {
+    StableLow,
+    StableHigh,
+    MaybeLow(u32),
+    MaybeHigh(u32),
+}
+
+impl ButtonDebounce {
+    fn poll(&mut self, is_low: bool) -> Option<Level> {
+        let timer = GlobalRollingTimer::new();
+        let mut retval = None;
+
+        *self = match *self {
+            ButtonDebounce::StableHigh => {
+                if is_low {
+                    ButtonDebounce::MaybeLow(timer.get_ticks())
+                } else {
+                    ButtonDebounce::StableHigh
+                }
+            }
+            ButtonDebounce::StableLow => {
+                if is_low {
+                    ButtonDebounce::StableLow
+                } else {
+                    ButtonDebounce::MaybeHigh(timer.get_ticks())
+                }
+            }
+            ButtonDebounce::MaybeHigh(start) => {
+                if is_low {
+                    ButtonDebounce::StableLow
+                } else if timer.millis_since(start) >= 5 {
+                    retval = Some(Level::High);
+                    ButtonDebounce::StableHigh
+                } else {
+                    ButtonDebounce::MaybeHigh(start)
+                }
+            }
+            ButtonDebounce::MaybeLow(start) => {
+                if !is_low {
+                    ButtonDebounce::StableHigh
+                } else if timer.millis_since(start) >= 5 {
+                    retval = Some(Level::Low);
+                    ButtonDebounce::StableLow
+                } else {
+                    ButtonDebounce::MaybeLow(start)
+                }
+            }
+        };
+
+        retval
+    }
+}
+
 #[app(device = nrf52840_hal::pac, peripherals = true)]
 const APP: () = {
     struct Resources {
@@ -87,6 +141,8 @@ const APP: () = {
         spim_p1: SpimSrc<SPIM1, A, 32>,
         spim_p2: SpimSrc<SPIM2, A, 32>,
         spim_p3: SpimSrc<SPIM3, A, 32>,
+        start_stop_btn: Pin<Input<PullUp>>,
+        start_stop_led: Pin<Output<PushPull>>,
     }
 
     #[init]
@@ -100,7 +156,7 @@ const APP: () = {
         cortex_m::asm::isb();
 
         // NOTE: nrf52840 has a total of 256KiB of RAM.
-        // We are allocating 192 KiB, or 48 data blocks, using
+        // We are allocating 128 KiB, or 32 data blocks, using
         // heapless pool.
         A::grow(DATA_POOL);
 
@@ -133,7 +189,7 @@ const APP: () = {
 
         let spim_pins_0 = SpimPins {
             sck: gpios_p1.p1_01.into_push_pull_output(Level::Low).degrade(),
-            miso: Some(gpios_p0.p0_11.into_floating_input().degrade()),
+            miso: Some(gpios_p0.p0_11.into_floating_input().degrade()), // button 1!
             mosi: None,
         };
 
@@ -154,6 +210,9 @@ const APP: () = {
             miso: Some(gpios_p1.p1_07.into_floating_input().degrade()),
             mosi: None,
         };
+
+        let start_stop_btn = gpios_p0.p0_25.into_pullup_input().degrade();
+        let start_stop_led = gpios_p0.p0_16.into_push_pull_output(Level::High).degrade();
 
         // TODO: This probably should be dynamic
         board.SPIM0.intenset.modify(|_r, w| {
@@ -220,6 +279,9 @@ const APP: () = {
             spim_p1: SpimSrc::new(spim_p1, &POOL_QUEUE),
             spim_p2: SpimSrc::new(spim_p2, &POOL_QUEUE),
             spim_p3: SpimSrc::new(spim_p3, &POOL_QUEUE),
+
+            start_stop_btn,
+            start_stop_led,
         }
     }
 
@@ -247,7 +309,7 @@ const APP: () = {
         c.resources.spim_p3.poll(&FUSE);
     }
 
-    #[idle(resources = [usb_dev, serial])]
+    #[idle(resources = [usb_dev, serial, start_stop_btn, start_stop_led])]
     fn idle(mut c: idle::Context) -> ! {
         let mut state: UsbDeviceState = UsbDeviceState::Default;
         let timer = GlobalRollingTimer::new();
@@ -256,6 +318,9 @@ const APP: () = {
         let start = timer.get_ticks();
         let mut last_profile = start;
         let mut fuse_timeout = None;
+
+        let mut button = ButtonDebounce::StableHigh;
+        let mut running = false;
 
         loop {
             PROFILER.idle_loop_iters();
@@ -281,23 +346,48 @@ const APP: () = {
                 continue;
             }
 
-            if fuse_timeout.is_none() && FUSE.load(Ordering::SeqCst) {
-                defmt::info!("Fuse blown! Cooling down...");
-                fuse_timeout = Some(timer.get_ticks());
+            /////////////////////////////////////////////////////////
+            // FUSES, START, AND STOP
+            /////////////////////////////////////////////////////////
+            if let Ok(is_low) = c.resources.start_stop_btn.is_low() {
+                if let Some(Level::Low) = button.poll(is_low) {
+                    if running {
+                        // Stopping by blowing the fuse
+                        defmt::info!("Stopping!");
+                        FUSE.store(true, Ordering::SeqCst);
+                        c.resources.start_stop_led.set_high().ok();
+                        running = false;
+                    } else if fuse_timeout.is_some() {
+                        // TODO: start after the fuse is cleared?
+                        defmt::info!("Not starting, waiting for fuse!");
+                    } else {
+                        defmt::info!("Starting!");
+                        FUSE.store(false, Ordering::SeqCst);
+                        rtic::pend(Interrupt::SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
+                        rtic::pend(Interrupt::SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1);
+                        rtic::pend(Interrupt::SPIM2_SPIS2_SPI2);
+                        rtic::pend(Interrupt::SPIM3);
+                        c.resources.start_stop_led.set_low().ok();
+                        running = true;
+                    }
+                }
             }
 
             if let Some(tick) = fuse_timeout.take() {
                 if timer.millis_since(tick) > 2500 {
-                    defmt::info!("Fuse restored! Clearing...");
-                    FUSE.store(false, Ordering::SeqCst);
-                    rtic::pend(Interrupt::SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
-                    rtic::pend(Interrupt::SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1);
-                    rtic::pend(Interrupt::SPIM2_SPIS2_SPI2);
-                    rtic::pend(Interrupt::SPIM3);
+                    defmt::info!("Fuse restored! Cleared");
+                    // NOTE: DON'T auto-clear the fuse! wait for an explicit run command
                 } else {
                     // Still cooling...
                     fuse_timeout = Some(tick);
                 }
+            }
+
+            if running && fuse_timeout.is_none() && FUSE.load(Ordering::SeqCst) {
+                defmt::info!("Fuse blown! Cooling down...");
+                c.resources.start_stop_led.set_high().ok();
+                fuse_timeout = Some(timer.get_ticks());
+                running = false;
             }
 
             if timer.millis_since(last_profile) >= 1000 {
