@@ -1,57 +1,42 @@
 #![no_main]
 #![no_std]
 
-use diegesis_fw::FillBuf;
-use diegesis_fw::spim_src::SpimSrc;
-use nrf52840_hal::pac::Interrupt;
+use core::ops::DerefMut;
+use core::sync::atomic::{AtomicBool, Ordering};
+
+use diegesis_fw::{groundhog_nrf52::GlobalRollingTimer, profiler, spim_src::SpimSrc, FillBuf};
+use diegesis_icd::{DataReport, Managed};
+
+use bbqueue::{consts as bbconsts, BBBuffer, ConstBBBuffer};
+use embedded_hal::digital::v2::{InputPin, OutputPin};
+use groundhog::RollingTimer;
+use heapless::{
+    mpmc::MpMcQueue,
+    pool,
+    pool::singleton::{Box, Pool},
+    pool::Init,
+};
 use nrf52840_hal::{
     clocks::{Clocks, ExternalOscillator, Internal, LfOscStopped},
     gpio::{
-        p0::Parts as P0Parts,
-        p1::Parts as P1Parts,
-        Level,
-        Pin, Input, PullUp, Output, PushPull,
+        p0::Parts as P0Parts, p1::Parts as P1Parts, Input, Level, Output, Pin, PullUp, PushPull,
     },
-    pac::{SPIM0, SPIM1, SPIM2, SPIM3},
-    usbd::Usbd,
+    pac::{Interrupt, SPIM0, SPIM1, SPIM2, SPIM3},
     spim::Frequency,
+    usbd::Usbd,
 };
+use postcard::to_rlercobs_writer;
 use rtic::app;
 use usb_device::{bus::UsbBusAllocator, class::UsbClass as _, device::UsbDeviceState, prelude::*};
 use usbd_serial::{SerialPort, USB_CLASS_CDC};
-use heapless::{
-    pool,
-    pool::Init,
-    pool::singleton::{
-        Box,
-        Pool
-    },
-    mpmc::MpMcQueue,
-};
-use postcard::to_rlercobs_writer;
-use diegesis_icd::{DataReport, Managed};
-use core::ops::DerefMut;
-use core::sync::atomic::AtomicBool;
-use core::sync::atomic::Ordering;
-use embedded_hal::digital::v2::{InputPin, OutputPin};
-use bbqueue::{
-    consts as bbconsts,
-    BBBuffer, ConstBBBuffer,
-};
-use groundhog::RollingTimer;
-use diegesis_fw::groundhog_nrf52::GlobalRollingTimer;
-use diegesis_fw::profiler;
 
 type UsbDevice<'a> = usb_device::device::UsbDevice<'static, Usbd<'a>>;
 type UsbSerial<'a> = SerialPort<'static, Usbd<'a>>;
 
-pool!(
-    A: [u8; 4096]
-);
+pool!(A: [u8; 4096]);
 
 static ENCODED_QUEUE: BBBuffer<bbconsts::U65536> = BBBuffer(ConstBBBuffer::new());
 static POOL_QUEUE: MpMcQueue<Box<A, Init>, 32> = MpMcQueue::new();
-
 
 // TODO
 // * Get timer up and going
@@ -60,8 +45,6 @@ static POOL_QUEUE: MpMcQueue<Box<A, Init>, 32> = MpMcQueue::new();
 // * Average time in interrupts?
 // * Bench rlercobs/postcard?
 // * Count bytes/stream on bench app
-
-
 
 profiler!(Profiler {
     spim_p0_ints,
@@ -98,13 +81,13 @@ impl ButtonDebounce {
             ButtonDebounce::MaybeHigh(start) if timer.millis_since(start) >= 5 => {
                 retval = Some(Level::High);
                 ButtonDebounce::StableHigh
-            },
+            }
             ButtonDebounce::MaybeLow(_) if !is_low => ButtonDebounce::StableHigh,
             ButtonDebounce::MaybeLow(start) if timer.millis_since(start) >= 5 => {
                 retval = Some(Level::Low);
                 ButtonDebounce::StableLow
-            },
-            retain => retain
+            }
+            retain => retain,
         };
 
         retval
@@ -207,14 +190,13 @@ const APP: () = {
         let usb_bus = USB_BUS.as_ref().unwrap();
 
         let serial = SerialPort::new(usb_bus);
-        let usb_dev =
-            UsbDeviceBuilder::new(usb_bus, UsbVidPid(0x16c0, 0x27DD))
-                .manufacturer("Ferrous Systems")
-                .product("diegesis")
-                .serial_number("diegesis-001")
-                .device_class(USB_CLASS_CDC)
-                .max_packet_size_0(64) // (makes control transfers 8x faster)
-                .build();
+        let usb_dev = UsbDeviceBuilder::new(usb_bus, UsbVidPid(0x16c0, 0x27DD))
+            .manufacturer("Ferrous Systems")
+            .product("diegesis")
+            .serial_number("diegesis-001")
+            .device_class(USB_CLASS_CDC)
+            .max_packet_size_0(64) // (makes control transfers 8x faster)
+            .build();
 
         // TODO: Remove me once we have a "start" interface!
         rtic::pend(Interrupt::SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
@@ -358,12 +340,18 @@ const APP: () = {
                     let fbuf = to_rlercobs_writer(
                         // TODO(AJM): We should be sending DataReports through the queue,
                         // not just boxes, so the senders can generate the metadata
-                        &DataReport { timestamp: 0x01020304, payload: Managed::Borrowed(new_box.deref_mut()) },
-                        FillBuf { buf: wgr, used: 0 }
-                    ).unwrap();
+                        &DataReport {
+                            timestamp: 0x01020304,
+                            payload: Managed::Borrowed(new_box.deref_mut()),
+                        },
+                        FillBuf { buf: wgr, used: 0 },
+                    )
+                    .unwrap();
                     let len = fbuf.content_len();
                     fbuf.buf.commit(len);
-                    PROFILER.bbq_push_bytes.fetch_add(len as u32, Ordering::SeqCst);
+                    PROFILER
+                        .bbq_push_bytes
+                        .fetch_add(len as u32, Ordering::SeqCst);
                 }
             };
 
@@ -373,7 +361,9 @@ const APP: () = {
                 match serial.write(&rgr) {
                     Ok(n) => {
                         PROFILER.usb_writes();
-                        PROFILER.bbq_pull_bytes.fetch_add(n as u32, Ordering::SeqCst);
+                        PROFILER
+                            .bbq_pull_bytes
+                            .fetch_add(n as u32, Ordering::SeqCst);
                         rgr.release(n);
                     }
                     Err(UsbError::WouldBlock) => {
