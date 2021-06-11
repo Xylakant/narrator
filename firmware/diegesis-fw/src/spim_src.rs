@@ -3,6 +3,7 @@ use core::sync::atomic::Ordering;
 
 use embedded_dma::WriteBuffer;
 use embedded_hal::spi::MODE_0;
+use groundhog::RollingTimer;
 use nrf52840_hal::Spim;
 use nrf52840_hal::gpio::Level;
 use nrf52840_hal::gpio::Pin;
@@ -15,6 +16,7 @@ use nrf52840_hal::spim::Pins;
 use nrf52840_hal::spim::TransferSplit;
 use heapless::mpmc::MpMcQueue;
 use crate::NopSlice;
+use crate::groundhog_nrf52::GlobalRollingTimer;
 use heapless::pool::Init;
 
 type PBox<POOL> = heapless::pool::singleton::Box<POOL, Init>;
@@ -77,6 +79,13 @@ impl Shame for SPIM3 {
     }
 }
 
+// (4_000_000 ticks/s) / (2_000_000 bps / 8 bit-per-byte / 4096 byte-per-box)
+const EXPECTED_TICKS: u32 = 65536;
+
+// Allow for +/- 0.2%
+// (totally unscientific number)
+const ACCEPTABLE_DELTA: i32 = (EXPECTED_TICKS as i32) / 500;
+
 pub struct SpimSrc<T, POOL, const N: usize>
 where
     T: Instance + Shame + Send,
@@ -85,6 +94,8 @@ where
 {
     periph: SpimPeriph<T, POOL>,
     pool_q: &'static MpMcQueue<PBox<POOL>, N>,
+    last_start: u32,
+    timer: GlobalRollingTimer,
 }
 
 impl<T, POOL, const N: usize> SpimSrc<T, POOL, N>
@@ -96,11 +107,14 @@ where
 {
     pub fn new(
         periph: SpimPeriph<T, POOL>,
-        pool_q: &'static MpMcQueue<PBox<POOL>, N>
+        pool_q: &'static MpMcQueue<PBox<POOL>, N>,
+        timer: GlobalRollingTimer,
     ) -> Self {
         Self {
             periph,
             pool_q,
+            last_start: 0,
+            timer,
         }
     }
 
@@ -110,6 +124,7 @@ where
         disc_pin: Pin<DISC>,
         pool_q: &'static MpMcQueue<PBox<POOL>, N>,
         freq: Frequency,
+        timer: GlobalRollingTimer,
     ) -> Self {
         let pins = Pins {
             sck: disc_pin.into_push_pull_output(Level::Low),
@@ -124,9 +139,12 @@ where
              .started().set_bit()
         });
 
+        // todo: calculate expected ticks automatically
+        assert_eq!(freq, Frequency::M2, "TODO: UPDATE EXPECTED TICKS");
+
         let spim = Spim::new(periph, pins, freq, MODE_0, 0x00);
         let spim_p = SpimPeriph::Idle(spim);
-        SpimSrc::new(spim_p, pool_q)
+        SpimSrc::new(spim_p, pool_q, timer)
     }
 
     pub fn poll(&mut self, fuse: &AtomicBool) {
@@ -147,6 +165,7 @@ where
                 if let Some(pbox) = POOL::alloc() {
                     let pbox = pbox.freeze();
                     let txfr = p.dma_transfer_split(NopSlice, pbox).map_err(drop).unwrap();
+                    self.last_start = self.timer.get_ticks();
                     SpimPeriph::OnePending(txfr)
                 } else {
                     // No data available! Blow the fuse.
@@ -169,6 +188,12 @@ where
                 // have the alloc page
                 if ts.is_done() {
                     let (_txb, rxb, p) = ts.wait();
+
+                    let elapsed = self.timer.ticks_since(self.last_start);
+                    let delta = (EXPECTED_TICKS as i32) - (elapsed as i32);
+                    if (delta < -ACCEPTABLE_DELTA) || (delta > ACCEPTABLE_DELTA) {
+                        defmt::warn!("spi deviation: {}", delta);
+                    }
 
                     if let Ok(()) = self.pool_q.enqueue(rxb) {
                         // defmt::info!("Sent box!");
@@ -205,6 +230,14 @@ where
             SpimPeriph::TwoPending { mut transfer, pending } => {
                 assert!(transfer.is_done());
                 let (_txb, rxb, one) = transfer.exchange_transfer_wait(pending);
+
+                let elapsed = self.timer.ticks_since(self.last_start);
+                let delta = (EXPECTED_TICKS as i32) - (elapsed as i32);
+                if (delta < -ACCEPTABLE_DELTA) || (delta > ACCEPTABLE_DELTA) {
+                    defmt::warn!("spi deviation: {}", delta);
+                }
+
+                self.last_start = self.timer.get_ticks();
 
                 // Disable end-to-start shortcut
                 unsafe {

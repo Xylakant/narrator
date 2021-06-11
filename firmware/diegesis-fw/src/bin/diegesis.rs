@@ -37,14 +37,8 @@ pool!(A: [u8; 4096]);
 
 static ENCODED_QUEUE: BBBuffer<bbconsts::U65536> = BBBuffer(ConstBBBuffer::new());
 static POOL_QUEUE: MpMcQueue<Box<A, Init>, 32> = MpMcQueue::new();
-
-// TODO
-// * Get timer up and going
-// * Count each interrupts/sec w/ Atomic
-// * Count idle loops/sec
-// * Average time in interrupts?
-// * Bench rlercobs/postcard?
-// * Count bytes/stream on bench app
+static PROFILER: Profiler = Profiler::new();
+static FUSE: AtomicBool = AtomicBool::new(true);
 
 profiler!(Profiler {
     spim_p0_ints,
@@ -57,9 +51,6 @@ profiler!(Profiler {
     bbq_pull_bytes,
     idle_loop_iters
 } => ProfilerRpt);
-
-static PROFILER: Profiler = Profiler::new();
-static FUSE: AtomicBool = AtomicBool::new(true);
 
 #[derive(Clone, Copy, Debug)]
 enum ButtonDebounce {
@@ -113,6 +104,7 @@ const APP: () = {
         static mut USB_BUS: Option<UsbBusAllocator<Usbd<'static>>> = None;
         static mut DATA_POOL: [u8; 32 * 4096] = [0u8; 32 * 4096];
 
+        // Enable instruction caches for MAXIMUM SPEED
         let board = ctx.device;
         board.NVMC.icachecnf.write(|w| w.cacheen().set_bit());
         cortex_m::asm::isb();
@@ -154,7 +146,8 @@ const APP: () = {
             gpios_p0.p0_11.degrade(),
             gpios_p1.p1_01.degrade(),
             &POOL_QUEUE,
-            Frequency::M4,
+            Frequency::M2,
+            GlobalRollingTimer,
         );
 
         let spim1 = SpimSrc::from_parts(
@@ -162,7 +155,8 @@ const APP: () = {
             gpios_p1.p1_03.degrade(),
             gpios_p1.p1_02.degrade(),
             &POOL_QUEUE,
-            Frequency::M4,
+            Frequency::M2,
+            GlobalRollingTimer,
         );
 
         let spim2 = SpimSrc::from_parts(
@@ -170,7 +164,8 @@ const APP: () = {
             gpios_p1.p1_05.degrade(),
             gpios_p1.p1_04.degrade(),
             &POOL_QUEUE,
-            Frequency::M4,
+            Frequency::M2,
+            GlobalRollingTimer,
         );
 
         let spim3 = SpimSrc::from_parts(
@@ -178,7 +173,8 @@ const APP: () = {
             gpios_p1.p1_07.degrade(),
             gpios_p1.p1_06.degrade(),
             &POOL_QUEUE,
-            Frequency::M4,
+            Frequency::M2,
+            GlobalRollingTimer,
         );
 
         let start_stop_btn = gpios_p0.p0_25.into_pullup_input().degrade();
@@ -197,12 +193,6 @@ const APP: () = {
             .device_class(USB_CLASS_CDC)
             .max_packet_size_0(64) // (makes control transfers 8x faster)
             .build();
-
-        // TODO: Remove me once we have a "start" interface!
-        rtic::pend(Interrupt::SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
-        rtic::pend(Interrupt::SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1);
-        rtic::pend(Interrupt::SPIM2_SPIS2_SPI2);
-        rtic::pend(Interrupt::SPIM3);
 
         init::LateResources {
             usb_dev,
@@ -254,7 +244,16 @@ const APP: () = {
         let mut button = ButtonDebounce::StableHigh;
         let mut running = false;
 
+        let mut last_loop = timer.get_ticks();
+        let mut min_ticks = 0xFFFFFFFF;
+        let mut max_ticks = 0x00000000;
+
         loop {
+            let elapsed = timer.ticks_since(last_loop);
+            min_ticks = min_ticks.min(elapsed);
+            max_ticks = max_ticks.max(elapsed);
+            last_loop = timer.get_ticks();
+
             PROFILER.idle_loop_iters();
             let new_state = c.resources.usb_dev.state();
             if new_state != state {
@@ -325,7 +324,18 @@ const APP: () = {
             if timer.millis_since(last_profile) >= 1000 {
                 let rpt = PROFILER.clear_and_report();
                 defmt::info!("{}", rpt);
+
                 last_profile = timer.get_ticks();
+
+                defmt::info!(
+                    "min: {}, max: {}, avg: {}",
+                    min_ticks,
+                    max_ticks,
+                    (4_000_000 / rpt.idle_loop_iters),
+                );
+
+                min_ticks = 0xFFFFFFFF;
+                max_ticks = 0x00000000;
             }
 
             // TODO: read?
