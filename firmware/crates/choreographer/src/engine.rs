@@ -1,10 +1,10 @@
 use core::cmp::min;
 
+use crate::behaviors::{Cycler, FadeColor, StayColor};
+use crate::LossyIntoF32;
+use groundhog::RollingTimer;
 use heapless::Vec;
 use smart_leds::RGB8;
-use crate::behaviors::{Cycler, FadeColor, StayColor};
-use groundhog::RollingTimer;
-use crate::LossyIntoF32;
 
 #[derive(Clone, Default)]
 pub struct Sequence<R, const N: usize>
@@ -56,7 +56,7 @@ where
     R: RollingTimer + Default + Clone,
     R::Tick: PartialOrd + LossyIntoF32,
 {
-    act: Action<R>
+    act: Action<R>,
 }
 
 impl Default for Behavior {
@@ -71,12 +71,10 @@ where
     R::Tick: PartialOrd + LossyIntoF32,
 {
     fn default() -> Self {
-        Actions::Static(
-            StayColor::new(
-                R::default().get_ticks(),
-                RGB8 {r: 0, g: 0, b: 0 },
-            )
-        )
+        Actions::Static(StayColor::new(
+            R::default().get_ticks(),
+            RGB8 { r: 0, g: 0, b: 0 },
+        ))
     }
 }
 
@@ -230,7 +228,7 @@ where
             act: Action {
                 action: Actions::default(),
                 behavior: Behavior::default(),
-            }
+            },
         }
     }
 
@@ -241,7 +239,10 @@ where
 
     #[inline(always)]
     pub fn times(mut self, ct: usize) -> Self {
-        self.act.behavior = Behavior::LoopN { current: 0, cycles: ct };
+        self.act.behavior = Behavior::LoopN {
+            current: 0,
+            cycles: ct,
+        };
         self
     }
 
@@ -286,7 +287,7 @@ where
             Actions::Sin(ref mut a) => {
                 a.duration_ms = duration;
                 a.period_ms = period_ms * 2.0
-            },
+            }
             Actions::Static(ref mut a) => a.duration_ms = duration,
             Actions::Fade(ref mut a) => {
                 a.inner_mut().duration_ms = duration;
@@ -300,7 +301,7 @@ where
     pub fn period_ms(mut self, duration: f32) -> Self {
         match &mut self.act.action {
             Actions::Sin(ref mut a) => a.period_ms = duration,
-            Actions::Static(_) => {},
+            Actions::Static(_) => {}
             Actions::Fade(ref mut a) => a.inner_mut().period_ms = duration,
         }
         self
@@ -310,11 +311,13 @@ where
     pub fn sin(mut self) -> Self {
         self.act.action = match self.act.action {
             s @ Actions::Sin(_) => s,
-            Actions::Static(StayColor { color, duration_ms, .. }) => Actions::Sin(Cycler::new(1.0f32, duration_ms, color)),
+            Actions::Static(StayColor {
+                color, duration_ms, ..
+            }) => Actions::Sin(Cycler::new(1.0f32, duration_ms, color)),
             Actions::Fade(FadeColor { mut cycler }) => {
                 cycler.start_low();
                 Actions::Sin(cycler)
-            },
+            }
         };
         self
     }
@@ -322,9 +325,13 @@ where
     #[inline(always)]
     pub fn solid(mut self) -> Self {
         self.act.action = match self.act.action {
-            Actions::Sin(cycler) => Actions::Static(StayColor::new(cycler.duration_ms, cycler.color)),
+            Actions::Sin(cycler) => {
+                Actions::Static(StayColor::new(cycler.duration_ms, cycler.color))
+            }
             s @ Actions::Static(_) => s,
-            Actions::Fade(FadeColor { cycler }) => Actions::Static(StayColor::new(cycler.duration_ms, cycler.color)),
+            Actions::Fade(FadeColor { cycler }) => {
+                Actions::Static(StayColor::new(cycler.duration_ms, cycler.color))
+            }
         };
         self
     }
@@ -332,9 +339,15 @@ where
     #[inline(always)]
     pub fn fade_up(mut self) -> Self {
         self.act.action = match self.act.action {
-            Actions::Sin(cycler) => Actions::Fade(FadeColor::new_fade_up(cycler.duration_ms, cycler.color)),
-            Actions::Static(stat) => Actions::Fade(FadeColor::new_fade_up(stat.duration_ms, stat.color)),
-            Actions::Fade(FadeColor { cycler }) => Actions::Fade(FadeColor::new_fade_up(cycler.duration_ms, cycler.color)),
+            Actions::Sin(cycler) => {
+                Actions::Fade(FadeColor::new_fade_up(cycler.duration_ms, cycler.color))
+            }
+            Actions::Static(stat) => {
+                Actions::Fade(FadeColor::new_fade_up(stat.duration_ms, stat.color))
+            }
+            Actions::Fade(FadeColor { cycler }) => {
+                Actions::Fade(FadeColor::new_fade_up(cycler.duration_ms, cycler.color))
+            }
         };
         self
     }
@@ -342,9 +355,15 @@ where
     #[inline(always)]
     pub fn fade_down(mut self) -> Self {
         self.act.action = match self.act.action {
-            Actions::Sin(cycler) => Actions::Fade(FadeColor::new_fade_down(cycler.duration_ms, cycler.color)),
-            Actions::Static(stat) => Actions::Fade(FadeColor::new_fade_down(stat.duration_ms, stat.color)),
-            Actions::Fade(FadeColor { cycler }) => Actions::Fade(FadeColor::new_fade_down(cycler.duration_ms, cycler.color)),
+            Actions::Sin(cycler) => {
+                Actions::Fade(FadeColor::new_fade_down(cycler.duration_ms, cycler.color))
+            }
+            Actions::Static(stat) => {
+                Actions::Fade(FadeColor::new_fade_down(stat.duration_ms, stat.color))
+            }
+            Actions::Fade(FadeColor { cycler }) => {
+                Actions::Fade(FadeColor::new_fade_down(cycler.duration_ms, cycler.color))
+            }
         };
         self
     }

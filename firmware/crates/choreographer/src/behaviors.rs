@@ -1,7 +1,7 @@
-use groundhog::RollingTimer;
-use smart_leds::RGB8;
-use libm::{cosf, fabsf, sinf};
 use crate::LossyIntoF32;
+use groundhog::RollingTimer;
+use libm::{cosf, fabsf, sinf};
+use smart_leds::RGB8;
 
 #[derive(Clone, Debug, Default)]
 pub struct StayColor<R>
