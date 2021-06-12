@@ -47,6 +47,7 @@ use core::sync::atomic::{AtomicPtr, Ordering};
 
 static TIMER_PTR: AtomicPtr<RegBlock0> = AtomicPtr::new(core::ptr::null_mut());
 
+#[derive(Default, Clone)]
 pub struct GlobalRollingTimer;
 
 impl GlobalRollingTimer {

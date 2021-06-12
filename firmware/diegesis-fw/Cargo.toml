@@ -28,16 +28,21 @@ embedded-dma = "0.1.2"
 groundhog = "0.1.0"
 smart-leds = "0.3.0"
 
-[dependencies.nrf-smartled]
-version = "0.3.0"
-features = ["52840"]
-path = "../vendor/nrf-smartled"
-
-
 [dependencies.serde]
 version = "1.0.126"
 default-features = false
 features = ["derive"]
+
+[dependencies.void]
+version = "1.0.2"
+default-features = false
+
+# Vendored/Local Crates
+
+[dependencies.nrf-smartled]
+version = "0.3.0"
+features = ["52840"]
+path = "../vendor/nrf-smartled"
 
 [dependencies.kolben]
 version = "0.0.3"
@@ -51,13 +56,12 @@ path = "../vendor/postcard"
 path = "../../shared/diegesis-icd"
 default-features = false
 
-[dependencies.void]
-version = "1.0.2"
-default-features = false
-
 [dependencies.nrf52840-hal]
 version = "0.12"
 path = "../vendor/nrf-hal/nrf52840-hal"
+
+[dependencies.choreographer]
+path = "../crates/choreographer"
 
 [features]
 # set logging levels here
