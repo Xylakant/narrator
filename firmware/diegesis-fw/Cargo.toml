@@ -26,6 +26,12 @@ bbqueue = "0.4.12"
 heapless = "0.7.1"
 embedded-dma = "0.1.2"
 groundhog = "0.1.0"
+smart-leds = "0.3.0"
+
+[dependencies.nrf-smartled]
+version = "0.3.0"
+features = ["52840"]
+path = "../vendor/nrf-smartled"
 
 
 [dependencies.serde]

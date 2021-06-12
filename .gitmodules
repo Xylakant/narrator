@@ -7,3 +7,6 @@
 [submodule "firmware/vendor/postcard"]
 	path = firmware/vendor/postcard
 	url = https://github.com/jamesmunns/postcard.git
+[submodule "firmware/vendor/nrf-smartled"]
+	path = firmware/vendor/nrf-smartled
+	url = https://github.com/jamesmunns/nrf-smartled.git
