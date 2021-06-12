@@ -1,20 +1,20 @@
 #![no_main]
 #![no_std]
 
+use choreographer::engine::{Action, Behavior, Sequence};
 use diegesis_fw; // global logger + panicking-behavior + memory layout
 use diegesis_fw::groundhog_nrf52::GlobalRollingTimer;
 use groundhog::RollingTimer;
 use nrf52840_hal::{
     clocks::Clocks,
-    gpio::{
-        p0::Parts as P0Parts, p1::Parts as P1Parts, Level,
-    },
+    gpio::{p0::Parts as P0Parts, p1::Parts as P1Parts, Level},
     pac,
 };
 use nrf_smartled::pwm::Pwm;
-use smart_leds::{
-    RGB8, SmartLedsWrite, colors, gamma,
-};
+use smart_leds::{colors, gamma, brightness, SmartLedsWrite};
+use choreographer::script;
+use choreographer::engine::Behavior::LoopForever;
+use smart_leds::colors::*;
 
 #[cortex_m_rt::entry]
 fn main() -> ! {
@@ -55,45 +55,144 @@ fn main() -> ! {
     let _start_stop_btn = gpios_p1.p1_15.into_pulldown_input().degrade();
     let _start_stop_led = gpios_p1.p1_14.into_push_pull_output(Level::Low).degrade();
 
-    let all_colors: &[RGB8; 10] = &[
-        RGB8 { r: 0, g: 0, b: 2 },
-        RGB8 { r: 0, g: 0, b: 2 },
-        RGB8 { r: 0, g: 0, b: 2 },
-        RGB8 { r: 0, g: 0, b: 3 },
-        RGB8 { r: 0, g: 0, b: 4 },
-        RGB8 { r: 1, g: 1, b: 6 },
-        RGB8 { r: 0, g: 0, b: 4 },
-        RGB8 { r: 0, g: 0, b: 2 },
-        RGB8 { r: 0, g: 0, b: 2 },
-        RGB8 { r: 0, g: 0, b: 2 },
-    ];
-
+    // Enable smartled switch
     let _ = gpios_p0.p0_06.into_push_pull_output(Level::Low);
 
-    let mut coloop = all_colors.iter().cloned().cycle();
     let mut data = [colors::BLACK; 10];
-
     let mut led = Pwm::new(board.PWM0, gpios_p0.p0_13.degrade());
 
     led.write(gamma(data.iter().cloned())).ok();
     let timer = GlobalRollingTimer::new();
-    let mut cycler = 0;
+
+    let mut script: [Sequence<GlobalRollingTimer, 8>; 10] = [
+        Sequence::empty(),
+        Sequence::empty(),
+        Sequence::empty(),
+        Sequence::empty(),
+        Sequence::empty(),
+        Sequence::empty(),
+        Sequence::empty(),
+        Sequence::empty(),
+        Sequence::empty(),
+        Sequence::empty(),
+    ];
+
+    script[0].set(
+        script!{
+            | action | color | duration_ms | period_ms_f | repeat |
+            |  solid | BLACK |           0 |         0.0 |   once |
+            |    sin | WHITE |        1000 |      2000.0 |   once |
+            |  solid | BLACK |        1000 |         0.0 |   once |
+        },
+        LoopForever,
+    );
+
+    script[1].set(
+        script!{
+            | action | color | duration_ms | period_ms_f | repeat |
+            |  solid | BLACK |         100 |         0.0 |   once |
+            |    sin | WHITE |        1000 |      2000.0 |   once |
+            |  solid | BLACK |         900 |         0.0 |   once |
+        },
+        Behavior::LoopForever,
+    );
+    script[2].set(
+        script!{
+            | action | color | duration_ms | period_ms_f | repeat |
+            |  solid | BLACK |         200 |         0.0 |   once |
+            |    sin |   RED |        1000 |      2000.0 |   once |
+            |  solid | BLACK |         800 |         0.0 |   once |
+        },
+        Behavior::LoopForever,
+    );
+    script[3].set(
+        script!{
+            | action |  color | duration_ms | period_ms_f | repeat |
+            |  solid |  BLACK |         300 |         0.0 |   once |
+            |    sin | ORANGE |        1000 |      2000.0 |   once |
+            |  solid |  BLACK |         700 |         0.0 |   once |
+        },
+        Behavior::LoopForever,
+    );
+    script[4].set(
+        script!{
+            | action |  color | duration_ms | period_ms_f | repeat |
+            |  solid |  BLACK |         400 |         0.0 |   once |
+            |    sin | YELLOW |        1000 |      2000.0 |   once |
+            |  solid |  BLACK |         600 |         0.0 |   once |
+        },
+        Behavior::LoopForever,
+    );
+    script[5].set(
+        script!{
+            | action | color | duration_ms | period_ms_f | repeat |
+            |  solid | BLACK |         500 |         0.0 |   once |
+            |    sin | GREEN |        1000 |      2000.0 |   once |
+            |  solid | BLACK |         500 |         0.0 |   once |
+        },
+        Behavior::LoopForever,
+    );
+    script[6].set(
+        script!{
+            | action | color | duration_ms | period_ms_f | repeat |
+            |  solid | BLACK |         600 |         0.0 |   once |
+            |    sin |  BLUE |        1000 |      2000.0 |   once |
+            |  solid | BLACK |         400 |         0.0 |   once |
+        },
+        Behavior::LoopForever,
+    );
+    script[7].set(
+        script!{
+            | action |  color | duration_ms | period_ms_f | repeat |
+            |  solid |  BLACK |         700 |         0.0 |   once |
+            |    sin | VIOLET |        1000 |      2000.0 |   once |
+            |  solid |  BLACK |         300 |         0.0 |   once |
+        },
+        Behavior::LoopForever,
+    );
+    script[8].set(
+        script!{
+            | action | color | duration_ms | period_ms_f | repeat |
+            |  solid | BLACK |         800 |         0.0 |   once |
+            |    sin | WHITE |        1000 |      2000.0 |   once |
+            |  solid | BLACK |         200 |         0.0 |   once |
+        },
+        Behavior::LoopForever,
+    );
+    script[9].set(
+        script!{
+            | action | color | duration_ms | period_ms_f | repeat |
+            |  solid | BLACK |         900 |         0.0 |   once |
+            |    sin | WHITE |        1000 |      2000.0 |   once |
+            |  solid | BLACK |         100 |         0.0 |   once |
+        },
+        Behavior::LoopForever,
+    );
+
+    // Update the screen
+    let mut any = false;
+    let mut last_rendered = timer.get_ticks();
+    let mut last_polled = timer.get_ticks();
 
     loop {
-        let start = timer.get_ticks();
-
-
-        cycler += 1;
-
-        if cycler >= 10 {
-            let _ = coloop.next();
-            cycler = 0;
+        if timer.micros_since(last_polled) < 500 {
+            continue;
         }
-        let mut cl = coloop.clone();
-        for led in data.iter_mut() {
-            *led = cl.next().unwrap();
+        last_polled = timer.get_ticks();
+
+        for (led, scr) in data.iter_mut().zip(script.iter_mut()) {
+            if let Some(pix) = scr.poll() {
+                any |= *led != pix;
+                *led = pix;
+            }
         }
-        led.write(data.iter().cloned()).ok();
-        while timer.millis_since(start) < 10 { }
+
+        if timer.millis_since(last_rendered) >= 15 {
+            if any {
+                led.write(brightness(gamma(data.iter().cloned()), 32)).unwrap();
+                any = false;
+            }
+            last_rendered = timer.get_ticks();
+        }
     }
 }
