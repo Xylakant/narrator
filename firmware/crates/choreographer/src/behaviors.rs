@@ -1,29 +1,39 @@
-use crate::clock::RollingClock;
-use crate::colors::RGB8;
+use groundhog::RollingTimer;
+use smart_leds::RGB8;
 use libm::{cosf, fabsf, sinf};
 
 #[derive(Clone, Debug, Default)]
-pub struct StayColor {
-    start_ms: u32,
-    pub duration_ms: u32,
+pub struct StayColor<R>
+where
+    R: RollingTimer + Default + Clone,
+    R::Tick: PartialOrd + Into<f32>,
+{
+    // TODO: Rename this field
+    start_tick: R::Tick,
+    pub duration_ms: R::Tick,
     pub color: RGB8,
 }
 
-impl StayColor {
-    pub fn new(duration_ms: u32, color: RGB8) -> Self {
+impl<R> StayColor<R>
+where
+    R: RollingTimer + Default + Clone,
+    R::Tick: PartialOrd + Into<f32>,
+{
+    pub fn new(duration_ms: R::Tick, color: RGB8) -> Self {
         Self {
-            start_ms: RollingClock::get_ms(),
+            start_tick: R::default().get_ticks(),
             duration_ms,
             color,
         }
     }
 
     pub fn reinit(&mut self) {
-        self.start_ms = RollingClock::get_ms();
+        self.start_tick = R::default().get_ticks();
     }
 
     pub fn poll(&self) -> Option<RGB8> {
-        if RollingClock::since(self.start_ms) >= self.duration_ms {
+        let timer = R::default();
+        if timer.millis_since(self.start_tick) >= self.duration_ms {
             None
         } else {
             Some(self.color)
@@ -31,11 +41,15 @@ impl StayColor {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Cycler {
-    start_ms: u32,
+#[derive(Clone)]
+pub struct Cycler<R>
+where
+    R: RollingTimer + Default + Clone,
+    R::Tick: PartialOrd + Into<f32>,
+{
+    start_tick: R::Tick,
     pub period_ms: f32,
-    pub duration_ms: u32,
+    pub duration_ms: R::Tick,
     pub color: RGB8,
     func: fn(f32) -> f32,
 }
@@ -45,14 +59,18 @@ pub struct Cycler {
 // reinit(): reinitialize with the current time
 // poll() -> Option<RGB8>: Some if updated color, None if action is complete
 
-impl Cycler {
-    pub fn new(period_ms: f32, duration_ms: u32, color: RGB8) -> Self {
+impl<R> Cycler<R>
+where
+    R: RollingTimer + Default + Clone,
+    R::Tick: PartialOrd + Into<f32>,
+{
+    pub fn new(period_ms: f32, duration_ms: R::Tick, color: RGB8) -> Self {
         // Since we "rectify" the sine wave, it actually has a period that
         // looks half as long.
         let period_ms = period_ms * 2.0;
 
         Self {
-            start_ms: RollingClock::get_ms(),
+            start_tick: R::default().get_ticks(),
             period_ms,
             duration_ms,
             color,
@@ -61,17 +79,18 @@ impl Cycler {
     }
 
     pub fn reinit(&mut self) {
-        self.start_ms = RollingClock::get_ms();
+        self.start_tick = R::default().get_ticks();
     }
 
     pub fn poll(&self) -> Option<RGB8> {
-        let delta = RollingClock::since(self.start_ms);
+        let timer = R::default();
+        let delta = timer.millis_since(self.start_tick);
 
         if delta >= self.duration_ms {
             return None;
         }
 
-        let deltaf = delta as f32;
+        let deltaf = delta.into();
         let normalized = deltaf / self.period_ms;
         let rad_norm = normalized * 2.0 * core::f32::consts::PI;
         let out_norm = (self.func)(rad_norm);
@@ -95,14 +114,22 @@ impl Cycler {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct FadeColor {
-    pub cycler: Cycler,
+#[derive(Clone)]
+pub struct FadeColor<R>
+where
+    R: RollingTimer + Default + Clone,
+    R::Tick: PartialOrd + Into<f32>,
+{
+    pub cycler: Cycler<R>,
 }
 
-impl FadeColor {
-    pub fn new_fade_up(duration_ms: u32, color: RGB8) -> Self {
-        let period_ms = (duration_ms as f32) * 2.0;
+impl<R> FadeColor<R>
+where
+    R: RollingTimer + Default + Clone,
+    R::Tick: PartialOrd + Into<f32>,
+{
+    pub fn new_fade_up(duration_ms: R::Tick, color: RGB8) -> Self {
+        let period_ms = duration_ms.into() * 2.0;
 
         let mut cycler = Cycler::new(period_ms, duration_ms, color);
         cycler.start_low();
@@ -110,8 +137,8 @@ impl FadeColor {
         Self { cycler }
     }
 
-    pub fn new_fade_down(duration_ms: u32, color: RGB8) -> Self {
-        let period_ms = (duration_ms as f32) * 2.0;
+    pub fn new_fade_down(duration_ms: R::Tick, color: RGB8) -> Self {
+        let period_ms = duration_ms.into() * 2.0;
 
         let mut cycler = Cycler::new(period_ms, duration_ms, color);
         cycler.start_high();
@@ -127,7 +154,7 @@ impl FadeColor {
         self.cycler.poll()
     }
 
-    pub fn inner_mut(&mut self) -> &mut Cycler {
+    pub fn inner_mut(&mut self) -> &mut Cycler<R> {
         &mut self.cycler
     }
 }

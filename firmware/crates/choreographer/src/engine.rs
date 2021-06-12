@@ -1,33 +1,43 @@
 use core::cmp::min;
 
-use heapless::{consts::*, Vec};
+use heapless::Vec;
+use smart_leds::RGB8;
+use crate::behaviors::{Cycler, FadeColor, StayColor};
+use groundhog::RollingTimer;
 
-use crate::{
-    colors::RGB8,
-    script::behaviors::{Cycler, FadeColor, StayColor},
-};
-
-#[derive(Clone, Debug, Default)]
-pub struct Sequence {
-    seq: Vec<Action, U8>,
+#[derive(Clone, Default)]
+pub struct Sequence<R, const N: usize>
+where
+    R: RollingTimer + Default + Clone,
+    R::Tick: PartialOrd + Into<f32>,
+{
+    seq: Vec<Action<R>, N>,
     position: usize,
     behavior: Behavior,
 }
 
-#[derive(Clone, Debug)]
-pub struct Action {
-    action: Actions,
+#[derive(Clone)]
+pub struct Action<R>
+where
+    R: RollingTimer + Default + Clone,
+    R::Tick: PartialOrd + Into<f32>,
+{
+    action: Actions<R>,
     behavior: Behavior,
 }
 
-#[derive(Clone, Debug)]
-pub enum Actions {
-    Sin(Cycler),
-    Static(StayColor),
-    Fade(FadeColor),
+#[derive(Clone)]
+pub enum Actions<R>
+where
+    R: RollingTimer + Default + Clone,
+    R::Tick: PartialOrd + Into<f32>,
+{
+    Sin(Cycler<R>),
+    Static(StayColor<R>),
+    Fade(FadeColor<R>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum Behavior {
     OneShot,
     LoopForever,
@@ -40,8 +50,13 @@ pub enum Behavior {
     Nop,
 }
 
-#[derive(Debug)]
-pub struct ActionBuilder(Action);
+pub struct ActionBuilder<R>
+where
+    R: RollingTimer + Default + Clone,
+    R::Tick: PartialOrd + Into<f32>,
+{
+    act: Action<R>
+}
 
 impl Default for Behavior {
     fn default() -> Self {
@@ -49,13 +64,26 @@ impl Default for Behavior {
     }
 }
 
-impl Default for Actions {
+impl<R> Default for Actions<R>
+where
+    R: RollingTimer + Default + Clone,
+    R::Tick: PartialOrd + Into<f32>,
+{
     fn default() -> Self {
-        Actions::Static(StayColor::new(0, RGB8 {r: 0, g: 0, b: 0 }))
+        Actions::Static(
+            StayColor::new(
+                R::default().get_ticks(),
+                RGB8 {r: 0, g: 0, b: 0 },
+            )
+        )
     }
 }
 
-impl Sequence {
+impl<R, const N: usize> Sequence<R, N>
+where
+    R: RollingTimer + Default + Clone,
+    R::Tick: PartialOrd + Into<f32>,
+{
     pub fn empty() -> Self {
         Self {
             seq: Vec::new(),
@@ -69,8 +97,8 @@ impl Sequence {
         self.position = 0;
     }
 
-    pub fn set(&mut self, actions: &[Action], behavior: Behavior) {
-        let amt = min(self.seq.capacity(), actions.len());
+    pub fn set(&mut self, actions: &[Action<R>], behavior: Behavior) {
+        let amt = min(N, actions.len());
         self.clear();
 
         self.seq.extend_from_slice(&actions[..amt]).ok();
@@ -132,14 +160,16 @@ impl Sequence {
     }
 }
 
-impl Action {
-    #![allow(dead_code)]
-
-    pub fn new(action: Actions, behavior: Behavior) -> Self {
+impl<R> Action<R>
+where
+    R: RollingTimer + Default + Clone,
+    R::Tick: PartialOrd + Into<f32>,
+{
+    pub fn new(action: Actions<R>, behavior: Behavior) -> Self {
         Self { action, behavior }
     }
 
-    pub fn build() -> ActionBuilder {
+    pub fn build() -> ActionBuilder<R> {
         ActionBuilder::new()
     }
 
@@ -188,43 +218,47 @@ impl Action {
 }
 
 // Builder Methods
-impl ActionBuilder {
-    #![allow(dead_code)]
-
+impl<R> ActionBuilder<R>
+where
+    R: RollingTimer + Default + Clone,
+    R::Tick: PartialOrd + Into<f32>,
+{
     #[inline(always)]
     pub fn new() -> Self {
-        Self(Action {
-            action: Actions::default(),
-            behavior: Behavior::default(),
-        })
+        Self {
+            act: Action {
+                action: Actions::default(),
+                behavior: Behavior::default(),
+            }
+        }
     }
 
     #[inline(always)]
-    pub fn finish(self) -> Action {
-        self.0
+    pub fn finish(self) -> Action<R> {
+        self.act
     }
 
     #[inline(always)]
     pub fn times(mut self, ct: usize) -> Self {
-        self.0.behavior = Behavior::LoopN { current: 0, cycles: ct };
+        self.act.behavior = Behavior::LoopN { current: 0, cycles: ct };
         self
     }
 
     #[inline(always)]
     pub fn once(mut self) -> Self {
-        self.0.behavior = Behavior::OneShot;
+        self.act.behavior = Behavior::OneShot;
         self
     }
 
     #[inline(always)]
     pub fn forever(mut self) -> Self {
-        self.0.behavior = Behavior::LoopForever;
+        self.act.behavior = Behavior::LoopForever;
         self
     }
 
     #[inline(always)]
     pub fn color(mut self, color: RGB8) -> Self {
-        match &mut self.0.action {
+        match &mut self.act.action {
             Actions::Sin(ref mut a) => a.color = color,
             Actions::Static(ref mut a) => a.color = color,
             Actions::Fade(ref mut a) => a.inner_mut().color = color,
@@ -233,21 +267,21 @@ impl ActionBuilder {
     }
 
     #[inline(always)]
-    pub fn for_ms(mut self, duration: u32) -> Self {
-        match &mut self.0.action {
+    pub fn for_ms(mut self, duration: R::Tick) -> Self {
+        match &mut self.act.action {
             Actions::Sin(ref mut a) => a.duration_ms = duration,
             Actions::Static(ref mut a) => a.duration_ms = duration,
             Actions::Fade(ref mut a) => {
                 a.inner_mut().duration_ms = duration;
-                a.inner_mut().period_ms = (duration as f32) * 4.0;
+                a.inner_mut().period_ms = duration.into() * 4.0;
             }
         }
         self
     }
 
     #[inline(always)]
-    pub fn dur_per_ms(mut self, duration: u32, period_ms: f32) -> Self {
-        match &mut self.0.action {
+    pub fn dur_per_ms(mut self, duration: R::Tick, period_ms: f32) -> Self {
+        match &mut self.act.action {
             Actions::Sin(ref mut a) => {
                 a.duration_ms = duration;
                 a.period_ms = period_ms * 2.0
@@ -255,7 +289,7 @@ impl ActionBuilder {
             Actions::Static(ref mut a) => a.duration_ms = duration,
             Actions::Fade(ref mut a) => {
                 a.inner_mut().duration_ms = duration;
-                a.inner_mut().period_ms = (duration as f32) * 4.0;
+                a.inner_mut().period_ms = duration.into() * 4.0;
             }
         }
         self
@@ -263,7 +297,7 @@ impl ActionBuilder {
 
     #[inline(always)]
     pub fn period_ms(mut self, duration: f32) -> Self {
-        match &mut self.0.action {
+        match &mut self.act.action {
             Actions::Sin(ref mut a) => a.period_ms = duration,
             Actions::Static(_) => {},
             Actions::Fade(ref mut a) => a.inner_mut().period_ms = duration,
@@ -273,7 +307,7 @@ impl ActionBuilder {
 
     #[inline(always)]
     pub fn sin(mut self) -> Self {
-        self.0.action = match self.0.action {
+        self.act.action = match self.act.action {
             s @ Actions::Sin(_) => s,
             Actions::Static(StayColor { color, duration_ms, .. }) => Actions::Sin(Cycler::new(1.0f32, duration_ms, color)),
             Actions::Fade(FadeColor { mut cycler }) => {
@@ -286,7 +320,7 @@ impl ActionBuilder {
 
     #[inline(always)]
     pub fn solid(mut self) -> Self {
-        self.0.action = match self.0.action {
+        self.act.action = match self.act.action {
             Actions::Sin(cycler) => Actions::Static(StayColor::new(cycler.duration_ms, cycler.color)),
             s @ Actions::Static(_) => s,
             Actions::Fade(FadeColor { cycler }) => Actions::Static(StayColor::new(cycler.duration_ms, cycler.color)),
@@ -296,7 +330,7 @@ impl ActionBuilder {
 
     #[inline(always)]
     pub fn fade_up(mut self) -> Self {
-        self.0.action = match self.0.action {
+        self.act.action = match self.act.action {
             Actions::Sin(cycler) => Actions::Fade(FadeColor::new_fade_up(cycler.duration_ms, cycler.color)),
             Actions::Static(stat) => Actions::Fade(FadeColor::new_fade_up(stat.duration_ms, stat.color)),
             Actions::Fade(FadeColor { cycler }) => Actions::Fade(FadeColor::new_fade_up(cycler.duration_ms, cycler.color)),
@@ -306,7 +340,7 @@ impl ActionBuilder {
 
     #[inline(always)]
     pub fn fade_down(mut self) -> Self {
-        self.0.action = match self.0.action {
+        self.act.action = match self.act.action {
             Actions::Sin(cycler) => Actions::Fade(FadeColor::new_fade_down(cycler.duration_ms, cycler.color)),
             Actions::Static(stat) => Actions::Fade(FadeColor::new_fade_down(stat.duration_ms, stat.color)),
             Actions::Fade(FadeColor { cycler }) => Actions::Fade(FadeColor::new_fade_down(cycler.duration_ms, cycler.color)),
@@ -315,7 +349,11 @@ impl ActionBuilder {
     }
 }
 
-impl Actions {
+impl<R> Actions<R>
+where
+    R: RollingTimer + Default + Clone,
+    R::Tick: PartialOrd + Into<f32>,
+{
     pub fn reinit(&mut self) {
         use Actions::*;
 
