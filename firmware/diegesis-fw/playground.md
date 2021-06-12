@@ -9,7 +9,7 @@ N/C: Explicitly not connected in schematic
 * P0.05 - A5/SDA
 * P0.06 - NEOSENSE_SWITCH
     * Enables power for neopixels
-    * Not sure if active hi/lo, guess: hi
+    * Active low
 * P0.07 - N/C
 * P0.08 - N/C
 * P0.09 - ??
@@ -82,3 +82,6 @@ N/C: Explicitly not connected in schematic
 * P1.29 - ???
 * P1.30 - ???
 * P1.31 - ???
+
+* CLI tool to identify pins with leds?
+*
