@@ -7,6 +7,10 @@ pub trait LossyIntoF32 {
     fn lossy_into(&self) -> f32;
 }
 
+pub mod reexports {
+    pub use smart_leds::colors;
+}
+
 impl LossyIntoF32 for u64 {
     fn lossy_into(&self) -> f32 {
         // oops
@@ -33,31 +37,6 @@ impl LossyIntoF32 for u8 {
     }
 }
 
-// script[0].set(
-//     &[
-//         Action::build()
-//             .solid()
-//             .color(colors::BLACK)
-//             .for_ms(0)
-//             .once()
-//             .finish(),
-//         Action::build()
-//             .for_ms(1000)
-//             .sin()
-//             .color(colors::WHITE)
-//             .period_ms(2000.0)
-//             .once()
-//             .finish(),
-//         Action::build()
-//             .solid()
-//             .color(colors::BLACK)
-//             .for_ms(1000)
-//             .once()
-//             .finish(),
-//     ],
-//     Behavior::LoopForever,
-// );
-
 // script!{
 //     LoopForever:
 //     | action | color | duration_ms | period_ms_f | repeat |
@@ -73,7 +52,7 @@ macro_rules! script {
             $(
                 $crate::engine::Action::build()
                     .$action()
-                    .color($color)
+                    .color($crate::reexports::colors::$color)
                     .for_ms($duration_ms)
                     .period_ms($period_ms_f)
                     .$repeat()

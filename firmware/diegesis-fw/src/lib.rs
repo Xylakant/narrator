@@ -3,13 +3,16 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use defmt_rtt as _; // global logger
-use kolben::rlercobs;
-use nrf52840_hal as _; // memory layout
-
-use nrf52840_hal::target_constants::SRAM_UPPER;
 use panic_probe as _;
+use nrf52840_hal::{
+    self as _, // memory layout
+    target_constants::SRAM_UPPER,
+};
+use kolben::rlercobs;
+
 pub mod spim_src;
 pub mod groundhog_nrf52;
+pub mod patterns;
 
 #[macro_use]
 pub mod profile_ct;
