@@ -170,15 +170,10 @@ fn main() -> ! {
     );
 
     // Update the screen
-    let mut any = false;
-    let mut last_rendered = timer.get_ticks();
-    let mut last_polled = timer.get_ticks();
 
     loop {
-        if timer.micros_since(last_polled) < 500 {
-            continue;
-        }
-        last_polled = timer.get_ticks();
+        let start = timer.get_ticks();
+        let mut any = false;
 
         for (led, scr) in data.iter_mut().zip(script.iter_mut()) {
             if let Some(pix) = scr.poll() {
@@ -187,12 +182,10 @@ fn main() -> ! {
             }
         }
 
-        if timer.millis_since(last_rendered) >= 15 {
-            if any {
-                led.write(brightness(gamma(data.iter().cloned()), 32)).unwrap();
-                any = false;
-            }
-            last_rendered = timer.get_ticks();
+        if any {
+            led.write(brightness(gamma(data.iter().cloned()), 32)).unwrap();
         }
+
+        while timer.millis_since(start) < 15 { }
     }
 }

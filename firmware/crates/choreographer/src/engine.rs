@@ -9,8 +9,7 @@ use smart_leds::RGB8;
 #[derive(Clone, Default)]
 pub struct Sequence<R, const N: usize>
 where
-    R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + LossyIntoF32,
+    R: RollingTimer<Tick = u32> + Default + Clone,
 {
     seq: Vec<Action<R>, N>,
     position: usize,
@@ -20,8 +19,7 @@ where
 #[derive(Clone)]
 pub struct Action<R>
 where
-    R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + LossyIntoF32,
+    R: RollingTimer<Tick = u32> + Default + Clone,
 {
     action: Actions<R>,
     behavior: Behavior,
@@ -30,8 +28,7 @@ where
 #[derive(Clone)]
 pub enum Actions<R>
 where
-    R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + LossyIntoF32,
+    R: RollingTimer<Tick = u32> + Default + Clone,
 {
     Sin(Cycler<R>),
     Static(StayColor<R>),
@@ -53,8 +50,7 @@ pub enum Behavior {
 
 pub struct ActionBuilder<R>
 where
-    R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + LossyIntoF32,
+    R: RollingTimer<Tick = u32> + Default + Clone,
 {
     act: Action<R>,
 }
@@ -67,12 +63,13 @@ impl Default for Behavior {
 
 impl<R> Default for Actions<R>
 where
-    R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + LossyIntoF32,
+    R: RollingTimer<Tick = u32> + Default + Clone,
 {
     fn default() -> Self {
+        let timer = R::default();
         Actions::Static(StayColor::new(
-            R::default().get_ticks(),
+            // TODO(AJM): This is a hack to get around no generic `.zero()` method
+            timer.ticks_since(timer.get_ticks()),
             RGB8 { r: 0, g: 0, b: 0 },
         ))
     }
@@ -80,8 +77,7 @@ where
 
 impl<R, const N: usize> Sequence<R, N>
 where
-    R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + LossyIntoF32,
+    R: RollingTimer<Tick = u32> + Default + Clone,
 {
     pub fn empty() -> Self {
         Self {
@@ -116,41 +112,44 @@ where
         use Behavior::*;
         match behavior {
             OneShot => seq[*position].poll().or_else(|| {
+                let end = seq[*position].calc_end();
                 *position += 1;
                 if *position < seq.len() {
-                    seq[*position].reinit();
+                    seq[*position].reinit(end);
                     seq[*position].poll()
                 } else {
                     None
                 }
             }),
             LoopForever => seq[*position].poll().or_else(|| {
+                let end = seq[*position].calc_end();
                 *position += 1;
 
                 if *position >= seq.len() {
                     *position = 0;
                 }
 
-                seq[*position].reinit();
+                seq[*position].reinit(end);
                 seq[*position].poll()
             }),
             LoopN {
                 ref mut current,
                 cycles,
             } => seq[*position].poll().or_else(|| {
+                let end = seq[*position].calc_end();
                 *position += 1;
 
                 if *position >= seq.len() {
                     if *current < *cycles {
                         *position = 0;
                         *current += 1;
-                        seq[*position].reinit();
+                        seq[*position].reinit(end);
                         seq[*position].poll()
                     } else {
                         None
                     }
                 } else {
-                    seq[*position].reinit();
+                    seq[*position].reinit(end);
                     seq[*position].poll()
                 }
             }),
@@ -161,8 +160,7 @@ where
 
 impl<R> Action<R>
 where
-    R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + LossyIntoF32,
+    R: RollingTimer<Tick = u32> + Default + Clone,
 {
     pub fn new(action: Actions<R>, behavior: Behavior) -> Self {
         Self { action, behavior }
@@ -172,8 +170,12 @@ where
         ActionBuilder::new()
     }
 
-    pub fn reinit(&mut self) {
-        self.action.reinit();
+    pub fn calc_end(&self) -> R::Tick {
+        self.action.calc_end()
+    }
+
+    pub fn reinit(&mut self, start: R::Tick) {
+        self.action.reinit(start);
 
         use Behavior::*;
         match &mut self.behavior {
@@ -197,7 +199,8 @@ where
         match behavior {
             OneShot => action.poll(),
             LoopForever => action.poll().or_else(|| {
-                action.reinit();
+                let end = action.calc_end();
+                action.reinit(end);
                 action.poll()
             }),
             LoopN {
@@ -219,8 +222,7 @@ where
 // Builder Methods
 impl<R> ActionBuilder<R>
 where
-    R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + LossyIntoF32,
+    R: RollingTimer<Tick = u32> + Default + Clone,
 {
     #[inline(always)]
     pub fn new() -> Self {
@@ -371,16 +373,25 @@ where
 
 impl<R> Actions<R>
 where
-    R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + LossyIntoF32,
+    R: RollingTimer<Tick = u32> + Default + Clone,
 {
-    pub fn reinit(&mut self) {
+    pub fn calc_end(&self) -> R::Tick {
         use Actions::*;
 
         match self {
-            Sin(s) => s.reinit(),
-            Static(s) => s.reinit(),
-            Fade(f) => f.reinit(),
+            Sin(s) => s.calc_end(),
+            Static(s) => s.calc_end(),
+            Fade(f) => f.calc_end(),
+        }
+    }
+
+    pub fn reinit(&mut self, start: R::Tick) {
+        use Actions::*;
+
+        match self {
+            Sin(s) => s.reinit(start),
+            Static(s) => s.reinit(start),
+            Fade(f) => f.reinit(start),
         }
     }
 

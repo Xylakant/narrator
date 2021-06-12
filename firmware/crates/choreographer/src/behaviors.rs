@@ -6,8 +6,7 @@ use smart_leds::RGB8;
 #[derive(Clone, Debug, Default)]
 pub struct StayColor<R>
 where
-    R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + LossyIntoF32,
+    R: RollingTimer<Tick = u32> + Default + Clone,
 {
     start_tick: R::Tick,
     pub duration_ms: R::Tick,
@@ -16,8 +15,7 @@ where
 
 impl<R> StayColor<R>
 where
-    R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + LossyIntoF32,
+    R: RollingTimer<Tick = u32> + Default + Clone,
 {
     pub fn new(duration_ms: R::Tick, color: RGB8) -> Self {
         Self {
@@ -27,8 +25,12 @@ where
         }
     }
 
-    pub fn reinit(&mut self) {
-        self.start_tick = R::default().get_ticks();
+    pub fn calc_end(&self) -> R::Tick {
+        self.start_tick.wrapping_add(self.duration_ms * (R::TICKS_PER_SECOND / 1000))
+    }
+
+    pub fn reinit(&mut self, start: R::Tick) {
+        self.start_tick = start;
     }
 
     pub fn poll(&self) -> Option<RGB8> {
@@ -44,8 +46,7 @@ where
 #[derive(Clone)]
 pub struct Cycler<R>
 where
-    R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + LossyIntoF32,
+    R: RollingTimer<Tick = u32> + Default + Clone,
 {
     start_tick: R::Tick,
     pub period_ms: f32,
@@ -61,8 +62,7 @@ where
 
 impl<R> Cycler<R>
 where
-    R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + LossyIntoF32,
+    R: RollingTimer<Tick = u32> + Default + Clone,
 {
     pub fn new(period_ms: f32, duration_ms: R::Tick, color: RGB8) -> Self {
         // Since we "rectify" the sine wave, it actually has a period that
@@ -78,8 +78,12 @@ where
         }
     }
 
-    pub fn reinit(&mut self) {
-        self.start_tick = R::default().get_ticks();
+    pub fn calc_end(&self) -> R::Tick {
+        self.start_tick.wrapping_add(self.duration_ms * (R::TICKS_PER_SECOND / 1000))
+    }
+
+    pub fn reinit(&mut self, start: R::Tick) {
+        self.start_tick = start;
     }
 
     pub fn poll(&self) -> Option<RGB8> {
@@ -117,16 +121,14 @@ where
 #[derive(Clone)]
 pub struct FadeColor<R>
 where
-    R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + LossyIntoF32,
+    R: RollingTimer<Tick = u32> + Default + Clone,
 {
     pub cycler: Cycler<R>,
 }
 
 impl<R> FadeColor<R>
 where
-    R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + LossyIntoF32,
+    R: RollingTimer<Tick = u32> + Default + Clone,
 {
     pub fn new_fade_up(duration_ms: R::Tick, color: RGB8) -> Self {
         let period_ms = duration_ms.lossy_into() * 2.0;
@@ -146,8 +148,12 @@ where
         Self { cycler }
     }
 
-    pub fn reinit(&mut self) {
-        self.cycler.reinit();
+    pub fn calc_end(&self) -> R::Tick {
+        self.cycler.calc_end()
+    }
+
+    pub fn reinit(&mut self, start: R::Tick) {
+        self.cycler.reinit(start);
     }
 
     pub fn poll(&self) -> Option<RGB8> {
