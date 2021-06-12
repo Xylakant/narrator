@@ -4,12 +4,13 @@ use heapless::Vec;
 use smart_leds::RGB8;
 use crate::behaviors::{Cycler, FadeColor, StayColor};
 use groundhog::RollingTimer;
+use crate::LossyIntoF32;
 
 #[derive(Clone, Default)]
 pub struct Sequence<R, const N: usize>
 where
     R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + Into<f32>,
+    R::Tick: PartialOrd + LossyIntoF32,
 {
     seq: Vec<Action<R>, N>,
     position: usize,
@@ -20,7 +21,7 @@ where
 pub struct Action<R>
 where
     R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + Into<f32>,
+    R::Tick: PartialOrd + LossyIntoF32,
 {
     action: Actions<R>,
     behavior: Behavior,
@@ -30,7 +31,7 @@ where
 pub enum Actions<R>
 where
     R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + Into<f32>,
+    R::Tick: PartialOrd + LossyIntoF32,
 {
     Sin(Cycler<R>),
     Static(StayColor<R>),
@@ -53,7 +54,7 @@ pub enum Behavior {
 pub struct ActionBuilder<R>
 where
     R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + Into<f32>,
+    R::Tick: PartialOrd + LossyIntoF32,
 {
     act: Action<R>
 }
@@ -67,7 +68,7 @@ impl Default for Behavior {
 impl<R> Default for Actions<R>
 where
     R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + Into<f32>,
+    R::Tick: PartialOrd + LossyIntoF32,
 {
     fn default() -> Self {
         Actions::Static(
@@ -82,7 +83,7 @@ where
 impl<R, const N: usize> Sequence<R, N>
 where
     R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + Into<f32>,
+    R::Tick: PartialOrd + LossyIntoF32,
 {
     pub fn empty() -> Self {
         Self {
@@ -163,7 +164,7 @@ where
 impl<R> Action<R>
 where
     R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + Into<f32>,
+    R::Tick: PartialOrd + LossyIntoF32,
 {
     pub fn new(action: Actions<R>, behavior: Behavior) -> Self {
         Self { action, behavior }
@@ -221,7 +222,7 @@ where
 impl<R> ActionBuilder<R>
 where
     R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + Into<f32>,
+    R::Tick: PartialOrd + LossyIntoF32,
 {
     #[inline(always)]
     pub fn new() -> Self {
@@ -273,7 +274,7 @@ where
             Actions::Static(ref mut a) => a.duration_ms = duration,
             Actions::Fade(ref mut a) => {
                 a.inner_mut().duration_ms = duration;
-                a.inner_mut().period_ms = duration.into() * 4.0;
+                a.inner_mut().period_ms = duration.lossy_into() * 4.0;
             }
         }
         self
@@ -289,7 +290,7 @@ where
             Actions::Static(ref mut a) => a.duration_ms = duration,
             Actions::Fade(ref mut a) => {
                 a.inner_mut().duration_ms = duration;
-                a.inner_mut().period_ms = duration.into() * 4.0;
+                a.inner_mut().period_ms = duration.lossy_into() * 4.0;
             }
         }
         self
@@ -352,7 +353,7 @@ where
 impl<R> Actions<R>
 where
     R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + Into<f32>,
+    R::Tick: PartialOrd + LossyIntoF32,
 {
     pub fn reinit(&mut self) {
         use Actions::*;

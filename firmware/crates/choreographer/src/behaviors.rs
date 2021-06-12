@@ -1,14 +1,14 @@
 use groundhog::RollingTimer;
 use smart_leds::RGB8;
 use libm::{cosf, fabsf, sinf};
+use crate::LossyIntoF32;
 
 #[derive(Clone, Debug, Default)]
 pub struct StayColor<R>
 where
     R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + Into<f32>,
+    R::Tick: PartialOrd + LossyIntoF32,
 {
-    // TODO: Rename this field
     start_tick: R::Tick,
     pub duration_ms: R::Tick,
     pub color: RGB8,
@@ -17,7 +17,7 @@ where
 impl<R> StayColor<R>
 where
     R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + Into<f32>,
+    R::Tick: PartialOrd + LossyIntoF32,
 {
     pub fn new(duration_ms: R::Tick, color: RGB8) -> Self {
         Self {
@@ -45,7 +45,7 @@ where
 pub struct Cycler<R>
 where
     R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + Into<f32>,
+    R::Tick: PartialOrd + LossyIntoF32,
 {
     start_tick: R::Tick,
     pub period_ms: f32,
@@ -62,7 +62,7 @@ where
 impl<R> Cycler<R>
 where
     R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + Into<f32>,
+    R::Tick: PartialOrd + LossyIntoF32,
 {
     pub fn new(period_ms: f32, duration_ms: R::Tick, color: RGB8) -> Self {
         // Since we "rectify" the sine wave, it actually has a period that
@@ -90,7 +90,7 @@ where
             return None;
         }
 
-        let deltaf = delta.into();
+        let deltaf = delta.lossy_into();
         let normalized = deltaf / self.period_ms;
         let rad_norm = normalized * 2.0 * core::f32::consts::PI;
         let out_norm = (self.func)(rad_norm);
@@ -118,7 +118,7 @@ where
 pub struct FadeColor<R>
 where
     R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + Into<f32>,
+    R::Tick: PartialOrd + LossyIntoF32,
 {
     pub cycler: Cycler<R>,
 }
@@ -126,10 +126,10 @@ where
 impl<R> FadeColor<R>
 where
     R: RollingTimer + Default + Clone,
-    R::Tick: PartialOrd + Into<f32>,
+    R::Tick: PartialOrd + LossyIntoF32,
 {
     pub fn new_fade_up(duration_ms: R::Tick, color: RGB8) -> Self {
-        let period_ms = duration_ms.into() * 2.0;
+        let period_ms = duration_ms.lossy_into() * 2.0;
 
         let mut cycler = Cycler::new(period_ms, duration_ms, color);
         cycler.start_low();
@@ -138,7 +138,7 @@ where
     }
 
     pub fn new_fade_down(duration_ms: R::Tick, color: RGB8) -> Self {
-        let period_ms = duration_ms.into() * 2.0;
+        let period_ms = duration_ms.lossy_into() * 2.0;
 
         let mut cycler = Cycler::new(period_ms, duration_ms, color);
         cycler.start_high();
