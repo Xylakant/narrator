@@ -11,6 +11,7 @@ where
     start_tick: R::Tick,
     pub duration_ms: R::Tick,
     pub color: RGB8,
+    pub phase_offset_ms: R::Tick,
 }
 
 impl<R> StayColor<R>
@@ -18,9 +19,12 @@ where
     R: RollingTimer<Tick = u32> + Default + Clone,
 {
     pub fn new(duration_ms: R::Tick, color: RGB8) -> Self {
+        let timer = R::default();
         Self {
-            start_tick: R::default().get_ticks(),
+            start_tick: timer.get_ticks(),
             duration_ms,
+            // TODO(AJM): This is a hack to get around no generic `.zero()` method
+            phase_offset_ms: timer.ticks_since(timer.get_ticks()),
             color,
         }
     }
@@ -51,6 +55,7 @@ where
     start_tick: R::Tick,
     pub period_ms: f32,
     pub duration_ms: R::Tick,
+    pub phase_offset_ms: R::Tick,
     pub color: RGB8,
     func: fn(f32) -> f32,
 }
@@ -73,6 +78,7 @@ where
             start_tick: R::default().get_ticks(),
             period_ms,
             duration_ms,
+            phase_offset_ms: 0,
             color,
             func: sinf,
         }
@@ -94,7 +100,7 @@ where
             return None;
         }
 
-        let deltaf = delta.lossy_into();
+        let deltaf = delta.wrapping_add(self.phase_offset_ms).lossy_into();
         let normalized = deltaf / self.period_ms;
         let rad_norm = normalized * 2.0 * core::f32::consts::PI;
         let out_norm = (self.func)(rad_norm);

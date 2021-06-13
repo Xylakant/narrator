@@ -284,6 +284,18 @@ where
     }
 
     #[inline(always)]
+    pub fn phase_offset_ms(mut self, phase_offset_ms: R::Tick) -> Self {
+        match &mut self.act.action {
+            Actions::Sin(ref mut a) => a.phase_offset_ms = phase_offset_ms,
+            Actions::Static(ref mut a) => a.phase_offset_ms = phase_offset_ms,
+            Actions::Fade(ref mut a) => {
+                a.inner_mut().phase_offset_ms = phase_offset_ms;
+            }
+        }
+        self
+    }
+
+    #[inline(always)]
     pub fn dur_per_ms(mut self, duration: R::Tick, period_ms: f32) -> Self {
         match &mut self.act.action {
             Actions::Sin(ref mut a) => {
@@ -314,10 +326,37 @@ where
         self.act.action = match self.act.action {
             s @ Actions::Sin(_) => s,
             Actions::Static(StayColor {
-                color, duration_ms, ..
-            }) => Actions::Sin(Cycler::new(1.0f32, duration_ms, color)),
+                color, duration_ms, phase_offset_ms, ..
+            }) => {
+                let mut c = Cycler::new(1.0f32, duration_ms, color);
+                c.phase_offset_ms = phase_offset_ms;
+                Actions::Sin(c)
+            }
             Actions::Fade(FadeColor { mut cycler }) => {
                 cycler.start_low();
+                Actions::Sin(cycler)
+            }
+        };
+        self
+    }
+
+    #[inline(always)]
+    pub fn cos(mut self) -> Self {
+        self.act.action = match self.act.action {
+            Actions::Sin(mut s) => {
+                s.start_high();
+                Actions::Sin(s)
+            },
+            Actions::Static(StayColor {
+                color, duration_ms, phase_offset_ms, ..
+            }) => {
+                let mut c = Cycler::new(1.0f32, duration_ms, color);
+                c.phase_offset_ms = phase_offset_ms;
+                c.start_high();
+                Actions::Sin(c)
+            }
+            Actions::Fade(FadeColor { mut cycler }) => {
+                cycler.start_high();
                 Actions::Sin(cycler)
             }
         };

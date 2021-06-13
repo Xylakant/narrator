@@ -37,27 +37,24 @@ impl LossyIntoF32 for u8 {
     }
 }
 
-// script!{
-//     LoopForever:
-//     | action | color | duration_ms | period_ms_f | repeat |
-//     |  solid | BLACK |           0 |           - |   once |
-//     |    sin | WHITE |        1000 |      2000.0 |   once |
-//     |  solid | BLACK |        1000 |           - |   once |
-// }
-
 #[macro_export]
 macro_rules! script {
-    (| action | color | duration_ms | period_ms_f | repeat | $(| $action:ident | $color:ident | $duration_ms:literal | $period_ms_f:literal | $repeat:ident |)+) => {
-        &[
-            $(
-                $crate::engine::Action::build()
-                    .$action()
-                    .color($crate::reexports::colors::$color)
-                    .for_ms($duration_ms)
-                    .period_ms($period_ms_f)
-                    .$repeat()
-                    .finish(),
-            )+
-        ]
+    (| action | color | duration_ms | period_ms_f | phase_offset_ms | repeat | $(| $action:ident | $color:ident | $duration_ms:literal | $period_ms_f:literal | $phase_offset_ms:literal | $repeat:ident |)+) => {
+        {
+            #[allow(unused_imports)]
+            use $crate::reexports::colors::*;
+            &[
+                $(
+                    $crate::engine::Action::build()
+                        .$action()
+                        .color($color)
+                        .for_ms($duration_ms)
+                        .period_ms($period_ms_f)
+                        .phase_offset_ms($phase_offset_ms)
+                        .$repeat()
+                        .finish(),
+                )+
+            ]
+        }
     };
 }

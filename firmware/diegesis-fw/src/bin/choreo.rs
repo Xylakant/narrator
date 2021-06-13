@@ -1,8 +1,11 @@
 #![no_main]
 #![no_std]
 
+use choreographer::engine::Behavior;
 use choreographer::engine::Sequence;
-use diegesis_fw::patterns::rainbow_crawler_ccw;
+use diegesis_fw::patterns::Direction;
+use diegesis_fw::patterns::color_walker;
+use diegesis_fw::patterns::rainbow_crawler;
 use diegesis_fw::{
     self as _, // global logger + panicking-behavior + memory layout
     groundhog_nrf52::GlobalRollingTimer
@@ -77,13 +80,29 @@ fn main() -> ! {
         Sequence::empty(),
     ];
 
-    rainbow_crawler_ccw(&mut script);
-
     // Update the screen
+    color_walker(
+        &mut script,
+        colors::CORNFLOWER_BLUE,
+        Behavior::OneShot,
+        Direction::Clockwise,
+    );
+    let reset_clock = timer.get_ticks();
+    let mut oneshot = false;
 
     loop {
         let start = timer.get_ticks();
         let mut any = false;
+
+        if !oneshot && timer.millis_since(reset_clock) >= 4000 {
+            color_walker(
+                &mut script,
+                colors::CORNFLOWER_BLUE,
+                Behavior::LoopForever,
+                Direction::Clockwise
+            );
+            oneshot = true;
+        }
 
         for (led, scr) in data.iter_mut().zip(script.iter_mut()) {
             if let Some(pix) = scr.poll() {
@@ -96,6 +115,6 @@ fn main() -> ! {
             led.write(brightness(gamma(data.iter().cloned()), 16)).unwrap();
         }
 
-        while timer.millis_since(start) < 15 { }
+        while timer.millis_since(start) < 16 { }
     }
 }
