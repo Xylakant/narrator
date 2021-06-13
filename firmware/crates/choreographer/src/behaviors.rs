@@ -12,6 +12,7 @@ where
     pub duration_ms: R::Tick,
     pub color: RGB8,
     pub phase_offset_ms: R::Tick,
+    pub auto_incr_phase: AutoIncr,
 }
 
 impl<R> StayColor<R>
@@ -26,6 +27,7 @@ where
             // TODO(AJM): This is a hack to get around no generic `.zero()` method
             phase_offset_ms: timer.ticks_since(timer.get_ticks()),
             color,
+            auto_incr_phase: AutoIncr::Never,
         }
     }
 
@@ -33,8 +35,22 @@ where
         self.start_tick.wrapping_add(self.duration_ms * (R::TICKS_PER_SECOND / 1000))
     }
 
-    pub fn reinit(&mut self, start: R::Tick) {
+    pub fn calc_end_phase(&self) -> R::Tick {
+        self.phase_offset_ms.wrapping_add(self.duration_ms)
+    }
+
+    pub fn reinit(&mut self, start: R::Tick, start_ph: R::Tick) {
         self.start_tick = start;
+        match self.auto_incr_phase {
+            AutoIncr::Never => {}
+            AutoIncr::Once => {
+                self.phase_offset_ms = start_ph;
+                self.auto_incr_phase = AutoIncr::Never;
+            }
+            AutoIncr::Forever => {
+                self.phase_offset_ms = start_ph;
+            }
+        }
     }
 
     pub fn poll(&self) -> Option<RGB8> {
@@ -47,12 +63,26 @@ where
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum AutoIncr {
+    Never,
+    Once,
+    Forever,
+}
+
+impl Default for AutoIncr {
+    fn default() -> Self {
+        AutoIncr::Never
+    }
+}
+
 #[derive(Clone)]
 pub struct Cycler<R>
 where
     R: RollingTimer<Tick = u32> + Default + Clone,
 {
     start_tick: R::Tick,
+    pub auto_incr_phase: AutoIncr,
     pub period_ms: f32,
     pub duration_ms: R::Tick,
     pub phase_offset_ms: R::Tick,
@@ -81,6 +111,7 @@ where
             phase_offset_ms: 0,
             color,
             func: sinf,
+            auto_incr_phase: AutoIncr::Never,
         }
     }
 
@@ -88,8 +119,22 @@ where
         self.start_tick.wrapping_add(self.duration_ms * (R::TICKS_PER_SECOND / 1000))
     }
 
-    pub fn reinit(&mut self, start: R::Tick) {
+    pub fn calc_end_phase(&self) -> R::Tick {
+        self.phase_offset_ms.wrapping_add(self.duration_ms)
+    }
+
+    pub fn reinit(&mut self, start: R::Tick, start_ph: R::Tick) {
         self.start_tick = start;
+        match self.auto_incr_phase {
+            AutoIncr::Never => { },
+            AutoIncr::Once => {
+                self.phase_offset_ms = start_ph;
+                self.auto_incr_phase = AutoIncr::Never;
+            }
+            AutoIncr::Forever => {
+                self.phase_offset_ms = start_ph;
+            }
+        }
     }
 
     pub fn poll(&self) -> Option<RGB8> {
@@ -154,12 +199,16 @@ where
         Self { cycler }
     }
 
+    pub fn calc_end_phase(&self) -> R::Tick {
+        self.cycler.calc_end_phase()
+    }
+
     pub fn calc_end(&self) -> R::Tick {
         self.cycler.calc_end()
     }
 
-    pub fn reinit(&mut self, start: R::Tick) {
-        self.cycler.reinit(start);
+    pub fn reinit(&mut self, start: R::Tick, start_ph: R::Tick) {
+        self.cycler.reinit(start, start_ph);
     }
 
     pub fn poll(&self) -> Option<RGB8> {

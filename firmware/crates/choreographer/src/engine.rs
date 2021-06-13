@@ -1,5 +1,6 @@
 use core::cmp::min;
 
+use crate::behaviors::AutoIncr;
 use crate::behaviors::{Cycler, FadeColor, StayColor};
 use crate::LossyIntoF32;
 use groundhog::RollingTimer;
@@ -113,9 +114,10 @@ where
         match behavior {
             OneShot => seq[*position].poll().or_else(|| {
                 let end = seq[*position].calc_end();
+                let end_ph = seq[*position].calc_end_phase();
                 *position += 1;
                 if *position < seq.len() {
-                    seq[*position].reinit(end);
+                    seq[*position].reinit(end, end_ph);
                     seq[*position].poll()
                 } else {
                     None
@@ -123,13 +125,14 @@ where
             }),
             LoopForever => seq[*position].poll().or_else(|| {
                 let end = seq[*position].calc_end();
+                let end_ph = seq[*position].calc_end_phase();
                 *position += 1;
 
                 if *position >= seq.len() {
                     *position = 0;
                 }
 
-                seq[*position].reinit(end);
+                seq[*position].reinit(end, end_ph);
                 seq[*position].poll()
             }),
             LoopN {
@@ -137,19 +140,20 @@ where
                 cycles,
             } => seq[*position].poll().or_else(|| {
                 let end = seq[*position].calc_end();
+                let end_ph = seq[*position].calc_end_phase();
                 *position += 1;
 
                 if *position >= seq.len() {
                     if *current < *cycles {
                         *position = 0;
                         *current += 1;
-                        seq[*position].reinit(end);
+                        seq[*position].reinit(end, end_ph);
                         seq[*position].poll()
                     } else {
                         None
                     }
                 } else {
-                    seq[*position].reinit(end);
+                    seq[*position].reinit(end, end_ph);
                     seq[*position].poll()
                 }
             }),
@@ -174,8 +178,12 @@ where
         self.action.calc_end()
     }
 
-    pub fn reinit(&mut self, start: R::Tick) {
-        self.action.reinit(start);
+    pub fn calc_end_phase(&self) -> R::Tick {
+        self.action.calc_end_phase()
+    }
+
+    pub fn reinit(&mut self, start: R::Tick, end_ph: R::Tick) {
+        self.action.reinit(start, end_ph);
 
         use Behavior::*;
         match &mut self.behavior {
@@ -200,7 +208,8 @@ where
             OneShot => action.poll(),
             LoopForever => action.poll().or_else(|| {
                 let end = action.calc_end();
-                action.reinit(end);
+                let end_ph = action.calc_end_phase();
+                action.reinit(end, end_ph);
                 action.poll()
             }),
             LoopN {
@@ -216,6 +225,18 @@ where
             }),
             Nop => None,
         }
+    }
+}
+
+pub enum PhaseIncr {
+    Millis(u32),
+    AutoIncr,
+    AutoIncrOnStart,
+}
+
+impl From<u32> for PhaseIncr {
+    fn from(data: u32) -> Self {
+        PhaseIncr::Millis(data)
     }
 }
 
@@ -284,12 +305,24 @@ where
     }
 
     #[inline(always)]
-    pub fn phase_offset_ms(mut self, phase_offset_ms: R::Tick) -> Self {
+    pub fn phase_offset_ms(mut self, phase_offset_ms: PhaseIncr) -> Self {
+        let (phase_offset_ms, incr) = match phase_offset_ms {
+            PhaseIncr::Millis(ms) => (ms, AutoIncr::Never),
+            PhaseIncr::AutoIncr => (0, AutoIncr::Forever),
+            PhaseIncr::AutoIncrOnStart => (0, AutoIncr::Once),
+        };
         match &mut self.act.action {
-            Actions::Sin(ref mut a) => a.phase_offset_ms = phase_offset_ms,
-            Actions::Static(ref mut a) => a.phase_offset_ms = phase_offset_ms,
+            Actions::Sin(ref mut a) => {
+                a.phase_offset_ms = phase_offset_ms;
+                a.auto_incr_phase = incr;
+            },
+            Actions::Static(ref mut a) => {
+                a.phase_offset_ms = phase_offset_ms;
+                a.auto_incr_phase = incr;
+            },
             Actions::Fade(ref mut a) => {
                 a.inner_mut().phase_offset_ms = phase_offset_ms;
+                a.inner_mut().auto_incr_phase = incr;
             }
         }
         self
@@ -424,13 +457,23 @@ where
         }
     }
 
-    pub fn reinit(&mut self, start: R::Tick) {
+    pub fn calc_end_phase(&self) -> R::Tick {
         use Actions::*;
 
         match self {
-            Sin(s) => s.reinit(start),
-            Static(s) => s.reinit(start),
-            Fade(f) => f.reinit(start),
+            Sin(s) => s.calc_end_phase(),
+            Static(s) => s.calc_end_phase(),
+            Fade(f) => f.calc_end_phase(),
+        }
+    }
+
+    pub fn reinit(&mut self, start: R::Tick, start_ph: R::Tick) {
+        use Actions::*;
+
+        match self {
+            Sin(s) => s.reinit(start, start_ph),
+            Static(s) => s.reinit(start, start_ph),
+            Fade(f) => f.reinit(start, start_ph),
         }
     }
 

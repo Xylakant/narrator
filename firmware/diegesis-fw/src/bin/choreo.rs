@@ -67,7 +67,7 @@ fn main() -> ! {
     led.write(gamma(data.iter().cloned())).ok();
     let timer = GlobalRollingTimer::new();
 
-    let mut script: [Sequence<GlobalRollingTimer, 8>; 10] = [
+    let mut script: [Sequence<GlobalRollingTimer, 16>; 10] = [
         Sequence::empty(),
         Sequence::empty(),
         Sequence::empty(),
@@ -81,9 +81,8 @@ fn main() -> ! {
     ];
 
     // Update the screen
-    color_walker(
+    rainbow_crawler(
         &mut script,
-        colors::CORNFLOWER_BLUE,
         Behavior::OneShot,
         Direction::Clockwise,
     );
@@ -104,17 +103,23 @@ fn main() -> ! {
             oneshot = true;
         }
 
+        let start = timer.get_ticks();
         for (led, scr) in data.iter_mut().zip(script.iter_mut()) {
             if let Some(pix) = scr.poll() {
                 any |= *led != pix;
                 *led = pix;
             }
         }
+        let update_time = timer.micros_since(start);
+        let start = timer.get_ticks();
 
         if any {
-            led.write(brightness(gamma(data.iter().cloned()), 16)).unwrap();
+            led.write(gamma(data.iter().cloned())).unwrap();
+            let display_time = timer.micros_since(start);
+            defmt::info!("Render: {=u32:}us Display: {=u32:}us", update_time, display_time);
         }
 
-        while timer.millis_since(start) < 16 { }
+
+        while timer.millis_since(start) < 41 { }
     }
 }

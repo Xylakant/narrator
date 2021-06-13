@@ -39,10 +39,11 @@ impl LossyIntoF32 for u8 {
 
 #[macro_export]
 macro_rules! script {
-    (| action | color | duration_ms | period_ms_f | phase_offset_ms | repeat | $(| $action:ident | $color:ident | $duration_ms:literal | $period_ms_f:literal | $phase_offset_ms:literal | $repeat:ident |)+) => {
+    (| action | color | duration_ms | period_ms_f | (phase_offset_ms) | repeat | $(| $action:ident | $color:ident | $duration_ms:literal | $period_ms_f:literal | ($phase_offset_ms:expr) | $repeat:ident |)+) => {
         {
             #[allow(unused_imports)]
             use $crate::reexports::colors::*;
+            use $crate::engine::PhaseIncr::*;
             &[
                 $(
                     $crate::engine::Action::build()
@@ -50,7 +51,26 @@ macro_rules! script {
                         .color($color)
                         .for_ms($duration_ms)
                         .period_ms($period_ms_f)
-                        .phase_offset_ms($phase_offset_ms)
+                        .phase_offset_ms($phase_offset_ms.into())
+                        .$repeat()
+                        .finish(),
+                )+
+            ]
+        }
+    };
+    (| action | color | duration_ms | period_ms_f | phase_offset_ms | repeat | $(| $action:ident | $color:ident | $duration_ms:literal | $period_ms_f:literal | $phase_offset_ms:literal | $repeat:ident |)+) => {
+        {
+            #[allow(unused_imports)]
+            use $crate::reexports::colors::*;
+            use $crate::engine::PhaseIncr::*;
+            &[
+                $(
+                    $crate::engine::Action::build()
+                        .$action()
+                        .color($color)
+                        .for_ms($duration_ms)
+                        .period_ms($period_ms_f)
+                        .phase_offset_ms($phase_offset_ms.into())
                         .$repeat()
                         .finish(),
                 )+
