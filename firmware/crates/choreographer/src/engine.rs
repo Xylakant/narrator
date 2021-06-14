@@ -1,5 +1,6 @@
 use core::cmp::min;
 use core::ops::{Deref, DerefMut};
+use core::marker::PhantomData;
 
 use crate::behaviors::AutoIncr;
 use crate::behaviors::{Cycler, FadeColor, StayColor};
@@ -8,10 +9,8 @@ use groundhog::RollingTimer;
 use heapless::Vec;
 use smart_leds::RGB8;
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Sequence<R, const N: usize>
-where
-    R: RollingTimer<Tick = u32> + Default + Clone,
 {
     seq: Vec<Action<R>, N>,
     position: usize,
@@ -19,10 +18,34 @@ where
     never_run: bool,
 }
 
-#[derive(Clone)]
-pub struct Action<R>
+impl<R, const N: usize> Sequence<R, N> {
+    const INIT: Sequence<R, N> = Sequence::new();
+
+    pub const fn new() -> Self {
+        Self {
+            seq: Vec::new(),
+            position: 0,
+            behavior: Behavior::Nop,
+            never_run: true,
+        }
+    }
+
+    pub const fn new_array<const M: usize>() -> [Self; M] {
+        [Self::INIT; M]
+    }
+}
+
+impl<R, const N: usize> Default for Sequence<R, N>
 where
     R: RollingTimer<Tick = u32> + Default + Clone,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Clone)]
+pub struct Action<R>
 {
     action: Actions<R>,
     behavior: Behavior,
@@ -30,15 +53,14 @@ where
 
 #[derive(Clone, Default)]
 pub struct Context<R>
-where
-    R: RollingTimer<Tick = u32> + Default + Clone,
 {
-    pub(crate) start_tick: R::Tick,
+    pub(crate) start_tick: u32, // TODO: Hack
     pub(crate) auto_incr_phase: AutoIncr,
     pub(crate) period_ms: f32,
-    pub(crate) duration_ms: R::Tick,
-    pub(crate) phase_offset_ms: R::Tick,
+    pub(crate) duration_ms: u32, // TODO: Hack
+    pub(crate) phase_offset_ms: u32, // TODO: Hack
     pub(crate) color: RGB8,
+    _pd: PhantomData<R>,
 }
 
 impl<R> Context<R>
@@ -71,8 +93,6 @@ where
 
 #[derive(Clone)]
 pub struct Actions<R>
-where
-    R: RollingTimer<Tick = u32> + Default + Clone,
 {
     context: Context<R>,
     kind: ActionsKind,

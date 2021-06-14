@@ -67,18 +67,7 @@ fn main() -> ! {
     led.write(gamma(data.iter().cloned())).ok();
     let timer = GlobalRollingTimer::new();
 
-    let mut script: [Sequence<GlobalRollingTimer, 16>; 10] = [
-        Sequence::empty(),
-        Sequence::empty(),
-        Sequence::empty(),
-        Sequence::empty(),
-        Sequence::empty(),
-        Sequence::empty(),
-        Sequence::empty(),
-        Sequence::empty(),
-        Sequence::empty(),
-        Sequence::empty(),
-    ];
+    let mut script: [Sequence<GlobalRollingTimer, 8>; 10] = Sequence::new_array();
 
     // Update the screen
     rainbow_crawler(
