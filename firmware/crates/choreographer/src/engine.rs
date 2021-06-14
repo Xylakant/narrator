@@ -15,6 +15,7 @@ where
     seq: Vec<Action<R>, N>,
     position: usize,
     behavior: Behavior,
+    never_run: bool,
 }
 
 #[derive(Clone)]
@@ -130,6 +131,7 @@ where
             seq: Vec::new(),
             position: 0,
             behavior: Behavior::OneShot,
+            never_run: true,
         }
     }
 
@@ -141,6 +143,8 @@ where
     pub fn set(&mut self, actions: &[Action<R>], behavior: Behavior) {
         let amt = min(N, actions.len());
         self.clear();
+
+        self.never_run = true;
 
         self.seq.extend_from_slice(&actions[..amt]).ok();
         self.behavior = behavior;
@@ -154,6 +158,15 @@ where
         let behavior = &mut self.behavior;
         let seq = &mut self.seq;
         let position = &mut self.position;
+
+        // If we are running this sequence for the first time,
+        // re-initialize to ensure time is current
+        if self.never_run {
+            let ph = seq[*position].action.context.phase_offset_ms;
+            let timer = R::default();
+            seq[*position].reinit(timer.get_ticks(), ph);
+            self.never_run = false;
+        }
 
         use Behavior::*;
         match behavior {
@@ -263,6 +276,7 @@ where
             } => action.poll().or_else(|| {
                 if *current < *cycles {
                     *current += 1;
+                    // TODO: Reinit as above?
                     action.poll()
                 } else {
                     None
@@ -360,7 +374,20 @@ where
     #[inline(always)]
     pub fn dur_per_ms(mut self, duration: R::Tick, period_ms: f32) -> Self {
         self.act.action.context.duration_ms = duration;
-        self.act.action.context.period_ms = period_ms;
+
+        // TODO: fix hax?
+        self.act.action.context.period_ms = match self.act.action.kind {
+            ActionsKind::Sin(_) => {
+                period_ms * 2.0
+            }
+            ActionsKind::Static(_) => {
+                period_ms
+            }
+            ActionsKind::Fade(_) => {
+                duration.lossy_into() * 4.0
+            }
+        };
+
         self
     }
 
@@ -372,7 +399,7 @@ where
 
     #[inline(always)]
     pub fn sin(mut self) -> Self {
-        let mut sin = Cycler::new(&mut self.act.action.context);
+        let mut sin = Cycler::new();
         sin.start_low();
         self.act.action.kind = ActionsKind::Sin(sin);
         self
@@ -380,7 +407,7 @@ where
 
     #[inline(always)]
     pub fn cos(mut self) -> Self {
-        let mut cos = Cycler::new(&mut self.act.action.context);
+        let mut cos = Cycler::new();
         cos.start_high();
         self.act.action.kind = ActionsKind::Sin(cos);
         self

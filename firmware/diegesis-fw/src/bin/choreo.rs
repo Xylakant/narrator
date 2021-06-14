@@ -86,6 +86,7 @@ fn main() -> ! {
         Behavior::OneShot,
         Direction::Clockwise,
     );
+    while timer.get_ticks() == 0 {}
     let reset_clock = timer.get_ticks();
     let mut oneshot = false;
 
@@ -115,7 +116,7 @@ fn main() -> ! {
         let start = timer.get_ticks();
 
         if any {
-            led.write(brightness(gamma(data.iter().cloned()), 32)).unwrap();
+            led.write(gamma(data.iter().cloned())).unwrap();
             let display_time = timer.micros_since(start);
             defmt::info!("Render: {=u32:}us Display: {=u32:}us", update_time, display_time);
         }

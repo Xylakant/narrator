@@ -49,14 +49,7 @@ pub struct Cycler {
 // poll() -> Option<RGB8>: Some if updated color, None if action is complete
 
 impl Cycler {
-    pub fn new<R>(context: &mut Context<R>) -> Self
-    where
-        R: RollingTimer<Tick = u32> + Default + Clone,
-    {
-        // Since we "rectify" the sine wave, it actually has a period that
-        // looks half as long.
-        context.period_ms *= 2.0;
-
+    pub fn new() -> Self {
         Self { func: <f32 as F32Ext>::sin }
     }
 
@@ -71,8 +64,12 @@ impl Cycler {
             return None;
         }
 
+        // Since we "rectify" the sine wave, it actually has a period that
+        // looks half as long.
+        let period = context.period_ms * 2.0;
+
         let deltaf = delta.wrapping_add(context.phase_offset_ms).lossy_into();
-        let normalized = deltaf / context.period_ms;
+        let normalized = deltaf / period;
         let rad_norm = normalized * 2.0 * core::f32::consts::PI;
         let out_norm = (self.func)(rad_norm);
         let abs_out = out_norm.abs();
@@ -105,7 +102,7 @@ impl FadeColor {
     where
         R: RollingTimer<Tick = u32> + Default + Clone,
     {
-        let mut cycler = Cycler::new(context);
+        let mut cycler = Cycler::new();
         cycler.start_low();
 
         // TODO: This might be better to remove later? Probably
@@ -120,7 +117,7 @@ impl FadeColor {
     where
         R: RollingTimer<Tick = u32> + Default + Clone,
     {
-        let mut cycler = Cycler::new(context);
+        let mut cycler = Cycler::new();
         cycler.start_high();
 
         // TODO: This might be better to remove later? Probably

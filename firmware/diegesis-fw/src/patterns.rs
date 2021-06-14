@@ -12,61 +12,61 @@ pub fn rainbow_crawler<const LEDS: usize, const MAX_STEPS: usize>(
         script! {
             | action |  color | duration_ms | period_ms_f | phase_offset_ms | repeat |
             |  solid |  BLACK |           0 |         0.0 |               0 |   once |
-            |    sin |  WHITE |        2500 |      5000.0 |               0 |   once |
+            |    sin |  WHITE |        2500 |      2500.0 |               0 |   once |
             |  solid |  BLACK |        1000 |         0.0 |               0 |   once |
         },
         script! {
             | action |  color | duration_ms | period_ms_f | phase_offset_ms | repeat |
             |  solid |  BLACK |         100 |         0.0 |               0 |   once |
-            |    sin |  WHITE |        2500 |      5000.0 |               0 |   once |
+            |    sin |  WHITE |        2500 |      2500.0 |               0 |   once |
             |  solid |  BLACK |         900 |         0.0 |               0 |   once |
         },
         script! {
             | action |  color | duration_ms | period_ms_f | phase_offset_ms | repeat |
             |  solid |  BLACK |         200 |         0.0 |               0 |   once |
-            |    sin |    RED |        2500 |      5000.0 |               0 |   once |
+            |    sin |    RED |        2500 |      2500.0 |               0 |   once |
             |  solid |  BLACK |         800 |         0.0 |               0 |   once |
         },
         script! {
             | action |  color | duration_ms | period_ms_f | phase_offset_ms | repeat |
             |  solid |  BLACK |         300 |         0.0 |               0 |   once |
-            |    sin | ORANGE |        2500 |      5000.0 |               0 |   once |
+            |    sin | ORANGE |        2500 |      2500.0 |               0 |   once |
             |  solid |  BLACK |         700 |         0.0 |               0 |   once |
         },
         script! {
             | action |  color | duration_ms | period_ms_f | phase_offset_ms | repeat |
             |  solid |  BLACK |         400 |         0.0 |               0 |   once |
-            |    sin | YELLOW |        2500 |      5000.0 |               0 |   once |
+            |    sin | YELLOW |        2500 |      2500.0 |               0 |   once |
             |  solid |  BLACK |         600 |         0.0 |               0 |   once |
         },
         script! {
             | action |  color | duration_ms | period_ms_f | phase_offset_ms | repeat |
             |  solid |  BLACK |         500 |         0.0 |               0 |   once |
-            |    sin |  GREEN |        2500 |      5000.0 |               0 |   once |
+            |    sin |  GREEN |        2500 |      2500.0 |               0 |   once |
             |  solid |  BLACK |         500 |         0.0 |               0 |   once |
         },
         script! {
             | action |  color | duration_ms | period_ms_f | phase_offset_ms | repeat |
             |  solid |  BLACK |         600 |         0.0 |               0 |   once |
-            |    sin |   BLUE |        2500 |      5000.0 |               0 |   once |
+            |    sin |   BLUE |        2500 |      2500.0 |               0 |   once |
             |  solid |  BLACK |         400 |         0.0 |               0 |   once |
         },
         script! {
             | action |  color | duration_ms | period_ms_f | phase_offset_ms | repeat |
             |  solid |  BLACK |         700 |         0.0 |               0 |   once |
-            |    sin | VIOLET |        2500 |      5000.0 |               0 |   once |
+            |    sin | VIOLET |        2500 |      2500.0 |               0 |   once |
             |  solid |  BLACK |         300 |         0.0 |               0 |   once |
         },
         script! {
             | action |  color | duration_ms | period_ms_f | phase_offset_ms | repeat |
             |  solid |  BLACK |         800 |         0.0 |               0 |   once |
-            |    sin |  WHITE |        2500 |      5000.0 |               0 |   once |
+            |    sin |  WHITE |        2500 |      2500.0 |               0 |   once |
             |  solid |  BLACK |         200 |         0.0 |               0 |   once |
         },
         script! {
             | action |  color | duration_ms | period_ms_f | phase_offset_ms | repeat |
             |  solid |  BLACK |         900 |         0.0 |               0 |   once |
-            |    sin |  WHITE |        2500 |      5000.0 |               0 |   once |
+            |    sin |  WHITE |        2500 |      2500.0 |               0 |   once |
             |  solid |  BLACK |         100 |         0.0 |               0 |   once |
         }
     ];
@@ -136,113 +136,113 @@ pub fn color_walker<const LEDS: usize, const MAX_STEPS: usize>(
     let plan: &[&[_]] = &[
         script! {
             | action |      color | duration_ms | period_ms_f | (phase_offset_ms) |  repeat |
-            |    cos |  color_1_8 |         250 |      4000.0 | (            250) |    once |
-            |    cos |  color_2_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_3_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_4_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_5_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_6_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_7_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_8_8 |        2000 |      4000.0 | ( AutoIncrOnStart) | forever |
+            |    cos |  color_1_8 |         250 |      2000.0 | (            250) |    once |
+            |    cos |  color_2_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_3_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_4_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_5_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_6_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_7_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_8_8 |        2000 |      2000.0 | ( AutoIncr) | forever |
         },
         script! {
             | action |      color | duration_ms | period_ms_f | (phase_offset_ms) |  repeat |
-            |    cos |  color_1_8 |         250 |      4000.0 | (            500) |    once |
-            |    cos |  color_2_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_3_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_4_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_5_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_6_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_7_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_8_8 |        2000 |      4000.0 | ( AutoIncrOnStart) | forever |
+            |    cos |  color_1_8 |         250 |      2000.0 | (            500) |    once |
+            |    cos |  color_2_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_3_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_4_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_5_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_6_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_7_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_8_8 |        2000 |      2000.0 | ( AutoIncr) | forever |
         },
         script! {
             | action |      color | duration_ms | period_ms_f | (phase_offset_ms) |  repeat |
-            |    cos |  color_1_8 |         250 |      4000.0 | (            750) |    once |
-            |    cos |  color_2_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_3_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_4_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_5_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_6_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_7_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_8_8 |        2000 |      4000.0 | ( AutoIncrOnStart) | forever |
+            |    cos |  color_1_8 |         250 |      2000.0 | (            750) |    once |
+            |    cos |  color_2_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_3_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_4_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_5_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_6_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_7_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_8_8 |        2000 |      2000.0 | ( AutoIncr) | forever |
         },
         script! {
             | action |      color | duration_ms | period_ms_f | (phase_offset_ms) |  repeat |
-            |    cos |  color_1_8 |         250 |      4000.0 | (           1000) |    once |
-            |    cos |  color_2_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_3_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_4_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_5_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_6_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_7_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_8_8 |        2000 |      4000.0 | ( AutoIncrOnStart) | forever |
+            |    cos |  color_1_8 |         250 |      2000.0 | (           1000) |    once |
+            |    cos |  color_2_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_3_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_4_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_5_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_6_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_7_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_8_8 |        2000 |      2000.0 | ( AutoIncr) | forever |
         },
         script! {
             | action |      color | duration_ms | period_ms_f | (phase_offset_ms) |  repeat |
-            |    cos |  color_1_8 |         250 |      4000.0 | (           1250) |    once |
-            |    cos |  color_2_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_3_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_4_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_5_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_6_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_7_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_8_8 |        2000 |      4000.0 | ( AutoIncrOnStart) | forever |
+            |    cos |  color_1_8 |         250 |      2000.0 | (           1250) |    once |
+            |    cos |  color_2_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_3_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_4_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_5_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_6_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_7_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_8_8 |        2000 |      2000.0 | ( AutoIncr) | forever |
         },
         script! {
             | action |      color | duration_ms | period_ms_f | (phase_offset_ms) |  repeat |
-            |    cos |  color_1_8 |         250 |      4000.0 | (           1500) |    once |
-            |    cos |  color_2_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_3_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_4_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_5_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_6_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_7_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_8_8 |        2000 |      4000.0 | ( AutoIncrOnStart) | forever |
+            |    cos |  color_1_8 |         250 |      2000.0 | (           1500) |    once |
+            |    cos |  color_2_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_3_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_4_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_5_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_6_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_7_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_8_8 |        2000 |      2000.0 | ( AutoIncr) | forever |
         },
         script! {
             | action |      color | duration_ms | period_ms_f | (phase_offset_ms) |  repeat |
-            |    cos |  color_1_8 |         250 |      4000.0 | (           1750) |    once |
-            |    cos |  color_2_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_3_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_4_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_5_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_6_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_7_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_8_8 |        2000 |      4000.0 | ( AutoIncrOnStart) | forever |
+            |    cos |  color_1_8 |         250 |      2000.0 | (           1750) |    once |
+            |    cos |  color_2_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_3_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_4_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_5_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_6_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_7_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_8_8 |        2000 |      2000.0 | ( AutoIncr) | forever |
         },
         script! {
             | action |      color | duration_ms | period_ms_f | (phase_offset_ms) |  repeat |
-            |    cos |  color_1_8 |         250 |      4000.0 | (           2000) |    once |
-            |    cos |  color_2_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_3_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_4_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_5_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_6_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_7_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_8_8 |        2000 |      4000.0 | ( AutoIncrOnStart) | forever |
+            |    cos |  color_1_8 |         250 |      2000.0 | (           2000) |    once |
+            |    cos |  color_2_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_3_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_4_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_5_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_6_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_7_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_8_8 |        2000 |      2000.0 | ( AutoIncr) | forever |
         },
         script! {
             | action |      color | duration_ms | period_ms_f | (phase_offset_ms) |  repeat |
-            |    cos |  color_1_8 |         250 |      4000.0 | (           2250) |    once |
-            |    cos |  color_2_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_3_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_4_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_5_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_6_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_7_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_8_8 |        2000 |      4000.0 | ( AutoIncrOnStart) | forever |
+            |    cos |  color_1_8 |         250 |      2000.0 | (           2250) |    once |
+            |    cos |  color_2_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_3_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_4_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_5_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_6_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_7_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_8_8 |        2000 |      2000.0 | ( AutoIncr) | forever |
         },
         script! {
             | action |      color | duration_ms | period_ms_f | (phase_offset_ms) |  repeat |
-            |    cos |  color_1_8 |         250 |      4000.0 | (           2500) |    once |
-            |    cos |  color_2_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_3_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_4_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_5_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_6_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_7_8 |         250 |      4000.0 | (       AutoIncr) |    once |
-            |    cos |  color_8_8 |        2000 |      4000.0 | ( AutoIncrOnStart) | forever |
+            |    cos |  color_1_8 |         250 |      2000.0 | (           2500) |    once |
+            |    cos |  color_2_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_3_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_4_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_5_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_6_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_7_8 |         250 |      2000.0 | (       AutoIncr) |    once |
+            |    cos |  color_8_8 |        2000 |      2000.0 | ( AutoIncr) | forever |
         }
     ];
 
