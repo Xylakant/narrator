@@ -26,14 +26,61 @@ where
     behavior: Behavior,
 }
 
-#[derive(Clone)]
-pub enum Actions<R>
+#[derive(Clone, Default)]
+pub struct Context<R>
 where
     R: RollingTimer<Tick = u32> + Default + Clone,
 {
-    Sin(Cycler<R>),
-    Static(StayColor<R>),
-    Fade(FadeColor<R>),
+    pub(crate) start_tick: R::Tick,
+    pub(crate) auto_incr_phase: AutoIncr,
+    pub(crate) period_ms: f32,
+    pub(crate) duration_ms: R::Tick,
+    pub(crate) phase_offset_ms: R::Tick,
+    pub(crate) color: RGB8,
+}
+
+impl<R> Context<R>
+where
+    R: RollingTimer<Tick = u32> + Default + Clone,
+{
+    pub fn calc_end(&self) -> R::Tick {
+        self.start_tick
+            .wrapping_add(self.duration_ms * (R::TICKS_PER_SECOND / 1000))
+    }
+
+    pub fn calc_end_phase(&self) -> R::Tick {
+        self.phase_offset_ms.wrapping_add(self.duration_ms)
+    }
+
+    pub fn reinit(&mut self, start: R::Tick, start_ph: R::Tick) {
+        self.start_tick = start;
+        match self.auto_incr_phase {
+            AutoIncr::Never => {}
+            AutoIncr::Once => {
+                self.phase_offset_ms = start_ph;
+                self.auto_incr_phase = AutoIncr::Never;
+            }
+            AutoIncr::Forever => {
+                self.phase_offset_ms = start_ph;
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct Actions<R>
+where
+    R: RollingTimer<Tick = u32> + Default + Clone,
+{
+    context: Context<R>,
+    kind: ActionsKind,
+}
+
+#[derive(Clone)]
+pub enum ActionsKind {
+    Sin(Cycler),
+    Static(StayColor),
+    Fade(FadeColor),
 }
 
 #[derive(Clone)]
@@ -67,12 +114,10 @@ where
     R: RollingTimer<Tick = u32> + Default + Clone,
 {
     fn default() -> Self {
-        let timer = R::default();
-        Actions::Static(StayColor::new(
-            // TODO(AJM): This is a hack to get around no generic `.zero()` method
-            timer.ticks_since(timer.get_ticks()),
-            RGB8 { r: 0, g: 0, b: 0 },
-        ))
+        Self {
+            context: Context::default(),
+            kind: ActionsKind::Static(StayColor::new()),
+        }
     }
 }
 
@@ -283,23 +328,19 @@ where
 
     #[inline(always)]
     pub fn color(mut self, color: RGB8) -> Self {
-        match &mut self.act.action {
-            Actions::Sin(ref mut a) => a.color = color,
-            Actions::Static(ref mut a) => a.color = color,
-            Actions::Fade(ref mut a) => a.inner_mut().color = color,
-        }
+        self.act.action.context.color = color;
         self
     }
 
     #[inline(always)]
     pub fn for_ms(mut self, duration: R::Tick) -> Self {
-        match &mut self.act.action {
-            Actions::Sin(ref mut a) => a.duration_ms = duration,
-            Actions::Static(ref mut a) => a.duration_ms = duration,
-            Actions::Fade(ref mut a) => {
-                a.inner_mut().duration_ms = duration;
-                a.inner_mut().period_ms = duration.lossy_into() * 4.0;
-            }
+        self.act.action.context.duration_ms = duration;
+
+        // TODO: This might be better to remove later? Probably
+        // conside how to handle these "hacks", or abstract over
+        // the cycler type more reasonably
+        if let ActionsKind::Fade(_) = self.act.action.kind {
+            self.act.action.context.period_ms = duration.lossy_into() * 4.0;
         }
         self
     }
@@ -311,134 +352,57 @@ where
             PhaseIncr::AutoIncr => (0, AutoIncr::Forever),
             PhaseIncr::AutoIncrOnStart => (0, AutoIncr::Once),
         };
-        match &mut self.act.action {
-            Actions::Sin(ref mut a) => {
-                a.phase_offset_ms = phase_offset_ms;
-                a.auto_incr_phase = incr;
-            },
-            Actions::Static(ref mut a) => {
-                a.phase_offset_ms = phase_offset_ms;
-                a.auto_incr_phase = incr;
-            },
-            Actions::Fade(ref mut a) => {
-                a.inner_mut().phase_offset_ms = phase_offset_ms;
-                a.inner_mut().auto_incr_phase = incr;
-            }
-        }
+        self.act.action.context.phase_offset_ms = phase_offset_ms;
+        self.act.action.context.auto_incr_phase = incr;
         self
     }
 
     #[inline(always)]
     pub fn dur_per_ms(mut self, duration: R::Tick, period_ms: f32) -> Self {
-        match &mut self.act.action {
-            Actions::Sin(ref mut a) => {
-                a.duration_ms = duration;
-                a.period_ms = period_ms * 2.0
-            }
-            Actions::Static(ref mut a) => a.duration_ms = duration,
-            Actions::Fade(ref mut a) => {
-                a.inner_mut().duration_ms = duration;
-                a.inner_mut().period_ms = duration.lossy_into() * 4.0;
-            }
-        }
+        self.act.action.context.duration_ms = duration;
+        self.act.action.context.period_ms = period_ms;
         self
     }
 
     #[inline(always)]
     pub fn period_ms(mut self, duration: f32) -> Self {
-        match &mut self.act.action {
-            Actions::Sin(ref mut a) => a.period_ms = duration,
-            Actions::Static(_) => {}
-            Actions::Fade(ref mut a) => a.inner_mut().period_ms = duration,
-        }
+        self.act.action.context.period_ms = duration;
         self
     }
 
     #[inline(always)]
     pub fn sin(mut self) -> Self {
-        self.act.action = match self.act.action {
-            s @ Actions::Sin(_) => s,
-            Actions::Static(StayColor {
-                color, duration_ms, phase_offset_ms, ..
-            }) => {
-                let mut c = Cycler::new(1.0f32, duration_ms, color);
-                c.phase_offset_ms = phase_offset_ms;
-                Actions::Sin(c)
-            }
-            Actions::Fade(FadeColor { mut cycler }) => {
-                cycler.start_low();
-                Actions::Sin(cycler)
-            }
-        };
+        let mut sin = Cycler::new(&mut self.act.action.context);
+        sin.start_low();
+        self.act.action.kind = ActionsKind::Sin(sin);
         self
     }
 
     #[inline(always)]
     pub fn cos(mut self) -> Self {
-        self.act.action = match self.act.action {
-            Actions::Sin(mut s) => {
-                s.start_high();
-                Actions::Sin(s)
-            },
-            Actions::Static(StayColor {
-                color, duration_ms, phase_offset_ms, ..
-            }) => {
-                let mut c = Cycler::new(1.0f32, duration_ms, color);
-                c.phase_offset_ms = phase_offset_ms;
-                c.start_high();
-                Actions::Sin(c)
-            }
-            Actions::Fade(FadeColor { mut cycler }) => {
-                cycler.start_high();
-                Actions::Sin(cycler)
-            }
-        };
+        let mut cos = Cycler::new(&mut self.act.action.context);
+        cos.start_high();
+        self.act.action.kind = ActionsKind::Sin(cos);
         self
     }
 
     #[inline(always)]
     pub fn solid(mut self) -> Self {
-        self.act.action = match self.act.action {
-            Actions::Sin(cycler) => {
-                Actions::Static(StayColor::new(cycler.duration_ms, cycler.color))
-            }
-            s @ Actions::Static(_) => s,
-            Actions::Fade(FadeColor { cycler }) => {
-                Actions::Static(StayColor::new(cycler.duration_ms, cycler.color))
-            }
-        };
+        self.act.action.kind = ActionsKind::Static(StayColor::new());
         self
     }
 
     #[inline(always)]
     pub fn fade_up(mut self) -> Self {
-        self.act.action = match self.act.action {
-            Actions::Sin(cycler) => {
-                Actions::Fade(FadeColor::new_fade_up(cycler.duration_ms, cycler.color))
-            }
-            Actions::Static(stat) => {
-                Actions::Fade(FadeColor::new_fade_up(stat.duration_ms, stat.color))
-            }
-            Actions::Fade(FadeColor { cycler }) => {
-                Actions::Fade(FadeColor::new_fade_up(cycler.duration_ms, cycler.color))
-            }
-        };
+        self.act.action.kind =
+            ActionsKind::Fade(FadeColor::new_fade_up(&mut self.act.action.context));
         self
     }
 
     #[inline(always)]
     pub fn fade_down(mut self) -> Self {
-        self.act.action = match self.act.action {
-            Actions::Sin(cycler) => {
-                Actions::Fade(FadeColor::new_fade_down(cycler.duration_ms, cycler.color))
-            }
-            Actions::Static(stat) => {
-                Actions::Fade(FadeColor::new_fade_down(stat.duration_ms, stat.color))
-            }
-            Actions::Fade(FadeColor { cycler }) => {
-                Actions::Fade(FadeColor::new_fade_down(cycler.duration_ms, cycler.color))
-            }
-        };
+        self.act.action.kind =
+            ActionsKind::Fade(FadeColor::new_fade_down(&mut self.act.action.context));
         self
     }
 }
@@ -448,41 +412,23 @@ where
     R: RollingTimer<Tick = u32> + Default + Clone,
 {
     pub fn calc_end(&self) -> R::Tick {
-        use Actions::*;
-
-        match self {
-            Sin(s) => s.calc_end(),
-            Static(s) => s.calc_end(),
-            Fade(f) => f.calc_end(),
-        }
+        self.context.calc_end()
     }
 
     pub fn calc_end_phase(&self) -> R::Tick {
-        use Actions::*;
-
-        match self {
-            Sin(s) => s.calc_end_phase(),
-            Static(s) => s.calc_end_phase(),
-            Fade(f) => f.calc_end_phase(),
-        }
+        self.context.calc_end_phase()
     }
 
     pub fn reinit(&mut self, start: R::Tick, start_ph: R::Tick) {
-        use Actions::*;
-
-        match self {
-            Sin(s) => s.reinit(start, start_ph),
-            Static(s) => s.reinit(start, start_ph),
-            Fade(f) => f.reinit(start, start_ph),
-        }
+        self.context.reinit(start, start_ph)
     }
 
     pub fn poll(&self) -> Option<RGB8> {
-        use Actions::*;
-        match self {
-            Sin(s) => s.poll(),
-            Static(s) => s.poll(),
-            Fade(f) => f.poll(),
+        use ActionsKind::*;
+        match &self.kind {
+            Sin(s) => s.poll(&self.context),
+            Static(s) => s.poll(&self.context),
+            Fade(f) => f.poll(&self.context),
         }
     }
 }
