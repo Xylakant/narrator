@@ -86,7 +86,6 @@ fn main() -> ! {
         Behavior::OneShot,
         Direction::Clockwise,
     );
-    while timer.get_ticks() == 0 {}
     let reset_clock = timer.get_ticks();
     let mut oneshot = false;
 
@@ -95,7 +94,6 @@ fn main() -> ! {
         let mut any = false;
 
         if !oneshot && timer.millis_since(reset_clock) >= 4000 {
-            defmt::info!("pow!");
             color_walker(
                 &mut script,
                 colors::CORNFLOWER_BLUE,
@@ -116,7 +114,7 @@ fn main() -> ! {
         let start = timer.get_ticks();
 
         if any {
-            led.write(gamma(data.iter().cloned())).unwrap();
+            led.write(brightness(gamma(data.iter().cloned()), 32)).unwrap();
             let display_time = timer.micros_since(start);
             defmt::info!("Render: {=u32:}us Display: {=u32:}us", update_time, display_time);
         }

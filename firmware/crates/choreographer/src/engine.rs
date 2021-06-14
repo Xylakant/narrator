@@ -1,4 +1,5 @@
 use core::cmp::min;
+use core::ops::{Deref, DerefMut};
 
 use crate::behaviors::AutoIncr;
 use crate::behaviors::{Cycler, FadeColor, StayColor};
@@ -220,6 +221,17 @@ where
     }
 }
 
+impl<R> Deref for Action<R>
+where
+    R: RollingTimer<Tick = u32> + Default + Clone,
+{
+    type Target = Context<R>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.action.context
+    }
+}
+
 impl<R> Action<R>
 where
     R: RollingTimer<Tick = u32> + Default + Clone,
@@ -230,14 +242,6 @@ where
 
     pub fn build() -> ActionBuilder<R> {
         ActionBuilder::new()
-    }
-
-    pub fn calc_end(&self) -> R::Tick {
-        self.action.calc_end()
-    }
-
-    pub fn calc_end_phase(&self) -> R::Tick {
-        self.action.calc_end_phase()
     }
 
     pub fn reinit(&mut self, start: R::Tick, end_ph: R::Tick) {
@@ -434,22 +438,30 @@ where
     }
 }
 
+impl<R> Deref for Actions<R>
+where
+    R: RollingTimer<Tick = u32> + Default + Clone,
+{
+    type Target = Context<R>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.context
+    }
+}
+
+impl<R> DerefMut for Actions<R>
+where
+    R: RollingTimer<Tick = u32> + Default + Clone,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.context
+    }
+}
+
 impl<R> Actions<R>
 where
     R: RollingTimer<Tick = u32> + Default + Clone,
 {
-    pub fn calc_end(&self) -> R::Tick {
-        self.context.calc_end()
-    }
-
-    pub fn calc_end_phase(&self) -> R::Tick {
-        self.context.calc_end_phase()
-    }
-
-    pub fn reinit(&mut self, start: R::Tick, start_ph: R::Tick) {
-        self.context.reinit(start, start_ph)
-    }
-
     pub fn poll(&self) -> Option<RGB8> {
         use ActionsKind::*;
         match &self.kind {
