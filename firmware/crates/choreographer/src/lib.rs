@@ -39,12 +39,12 @@ impl LossyIntoF32 for u8 {
 
 #[macro_export]
 macro_rules! script {
-    (| action | color | duration_ms | period_ms_f | (phase_offset_ms) | repeat | $(| $action:ident | $color:ident | $duration_ms:literal | $period_ms_f:literal | ($phase_offset_ms:expr) | $repeat:ident |)+) => {
+    (| action | color | (duration_ms) | (period_ms_f) | (phase_offset_ms) | repeat | $(| $action:ident | $color:ident | ($duration_ms:expr) | ($period_ms_f:expr) | ($phase_offset_ms:expr) | $repeat:ident |)+) => {
         {
             #[allow(unused_imports)]
             use $crate::reexports::colors::*;
             use $crate::engine::PhaseIncr::*;
-            &[
+            [
                 $(
                     $crate::engine::Action::build()
                         .$action()
@@ -63,7 +63,7 @@ macro_rules! script {
             #[allow(unused_imports)]
             use $crate::reexports::colors::*;
             use $crate::engine::PhaseIncr::*;
-            &[
+            [
                 $(
                     $crate::engine::Action::build()
                         .$action()

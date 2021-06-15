@@ -92,6 +92,44 @@ impl Cycler {
     }
 }
 
+
+#[derive(Clone)]
+pub struct SeekColor;
+
+// Methods:
+//
+// reinit(): reinitialize with the current time
+// poll() -> Option<RGB8>: Some if updated color, None if action is complete
+
+impl SeekColor {
+    pub fn new() -> Self {
+        Self
+    }
+
+    pub fn poll<R>(&self, context: &Context<R>) -> Option<RGB8>
+    where
+        R: RollingTimer<Tick = u32> + Default + Clone,
+    {
+        let timer = R::default();
+        let delta = timer.millis_since(context.start_tick);
+
+        if delta >= context.duration_ms {
+            return None;
+        }
+
+        let delta_r = ((context.color.r as i16) - (context.last_color.r as i16)) as f32;
+        let delta_g = ((context.color.g as i16) - (context.last_color.g as i16)) as f32;
+        let delta_b = ((context.color.b as i16) - (context.last_color.b as i16)) as f32;
+        let norm_dt = (delta as f32) / (context.duration_ms as f32);
+        let norm_r = ((context.last_color.r as i16) + ((delta_r * norm_dt) as i16)) as u8;
+        let norm_g = ((context.last_color.g as i16) + ((delta_g * norm_dt) as i16)) as u8;
+        let norm_b = ((context.last_color.b as i16) + ((delta_b * norm_dt) as i16)) as u8;
+
+
+        Some(RGB8 { r: norm_r, g: norm_g, b: norm_b })
+    }
+}
+
 #[derive(Clone)]
 pub struct FadeColor {
     pub cycler: Cycler,

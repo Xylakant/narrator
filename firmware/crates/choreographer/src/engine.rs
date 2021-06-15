@@ -3,11 +3,12 @@ use core::ops::{Deref, DerefMut};
 use core::marker::PhantomData;
 
 use crate::behaviors::AutoIncr;
-use crate::behaviors::{Cycler, FadeColor, StayColor};
+use crate::behaviors::{Cycler, FadeColor, StayColor, SeekColor};
 use crate::LossyIntoF32;
 use groundhog::RollingTimer;
 use heapless::Vec;
 use smart_leds::RGB8;
+use smart_leds::colors::BLACK;
 
 #[derive(Clone)]
 pub struct Sequence<R, const N: usize>
@@ -54,11 +55,12 @@ pub struct Action<R>
 #[derive(Clone, Default)]
 pub struct Context<R>
 {
-    pub(crate) start_tick: u32, // TODO: Hack
+    pub(crate) start_tick: u32, // TODO: Hack - Not R::Tick because const init
     pub(crate) auto_incr_phase: AutoIncr,
     pub(crate) period_ms: f32,
-    pub(crate) duration_ms: u32, // TODO: Hack
-    pub(crate) phase_offset_ms: u32, // TODO: Hack
+    pub(crate) duration_ms: u32, // TODO: Hack - Not R::Tick because const init
+    pub(crate) phase_offset_ms: u32, // TODO: Hack - Not R::Tick because const init
+    pub(crate) last_color: RGB8,
     pub(crate) color: RGB8,
     _pd: PhantomData<R>,
 }
@@ -76,8 +78,9 @@ where
         self.phase_offset_ms.wrapping_add(self.duration_ms)
     }
 
-    pub fn reinit(&mut self, start: R::Tick, start_ph: R::Tick) {
+    pub fn reinit(&mut self, start: R::Tick, start_ph: R::Tick, last_color: RGB8) {
         self.start_tick = start;
+        self.last_color = last_color;
         match self.auto_incr_phase {
             AutoIncr::Never => {}
             AutoIncr::Once => {
@@ -103,6 +106,7 @@ pub enum ActionsKind {
     Sin(Cycler),
     Static(StayColor),
     Fade(FadeColor),
+    Seek(SeekColor),
 }
 
 #[derive(Clone)]
@@ -185,7 +189,7 @@ where
         if self.never_run {
             let ph = seq[*position].action.context.phase_offset_ms;
             let timer = R::default();
-            seq[*position].reinit(timer.get_ticks(), ph);
+            seq[*position].reinit(timer.get_ticks(), ph, BLACK);
             self.never_run = false;
         }
 
@@ -194,9 +198,10 @@ where
             OneShot => seq[*position].poll().or_else(|| {
                 let end = seq[*position].calc_end();
                 let end_ph = seq[*position].calc_end_phase();
+                let last_color = seq[*position].color;
                 *position += 1;
                 if *position < seq.len() {
-                    seq[*position].reinit(end, end_ph);
+                    seq[*position].reinit(end, end_ph, last_color);
                     seq[*position].poll()
                 } else {
                     None
@@ -205,13 +210,14 @@ where
             LoopForever => seq[*position].poll().or_else(|| {
                 let end = seq[*position].calc_end();
                 let end_ph = seq[*position].calc_end_phase();
+                let last_color = seq[*position].color;
                 *position += 1;
 
                 if *position >= seq.len() {
                     *position = 0;
                 }
 
-                seq[*position].reinit(end, end_ph);
+                seq[*position].reinit(end, end_ph, last_color);
                 seq[*position].poll()
             }),
             LoopN {
@@ -220,19 +226,20 @@ where
             } => seq[*position].poll().or_else(|| {
                 let end = seq[*position].calc_end();
                 let end_ph = seq[*position].calc_end_phase();
+                let last_color = seq[*position].color;
                 *position += 1;
 
                 if *position >= seq.len() {
                     if *current < *cycles {
                         *position = 0;
                         *current += 1;
-                        seq[*position].reinit(end, end_ph);
+                        seq[*position].reinit(end, end_ph, last_color);
                         seq[*position].poll()
                     } else {
                         None
                     }
                 } else {
-                    seq[*position].reinit(end, end_ph);
+                    seq[*position].reinit(end, end_ph, last_color);
                     seq[*position].poll()
                 }
             }),
@@ -264,8 +271,8 @@ where
         ActionBuilder::new()
     }
 
-    pub fn reinit(&mut self, start: R::Tick, end_ph: R::Tick) {
-        self.action.reinit(start, end_ph);
+    pub fn reinit(&mut self, start: R::Tick, end_ph: R::Tick, last_color: RGB8) {
+        self.action.reinit(start, end_ph, last_color);
 
         use Behavior::*;
         match &mut self.behavior {
@@ -291,7 +298,8 @@ where
             LoopForever => action.poll().or_else(|| {
                 let end = action.calc_end();
                 let end_ph = action.calc_end_phase();
-                action.reinit(end, end_ph);
+                let last_color = action.context.color;
+                action.reinit(end, end_ph, last_color);
                 action.poll()
             }),
             LoopN {
@@ -410,6 +418,9 @@ where
             ActionsKind::Fade(_) => {
                 duration.lossy_into() * 4.0
             }
+            ActionsKind::Seek(_) => {
+                period_ms
+            }
         };
 
         self
@@ -426,6 +437,12 @@ where
         let mut sin = Cycler::new();
         sin.start_low();
         self.act.action.kind = ActionsKind::Sin(sin);
+        self
+    }
+
+    #[inline(always)]
+    pub fn seek(mut self) -> Self {
+        self.act.action.kind = ActionsKind::Seek(SeekColor);
         self
     }
 
@@ -488,6 +505,7 @@ where
             Sin(s) => s.poll(&self.context),
             Static(s) => s.poll(&self.context),
             Fade(f) => f.poll(&self.context),
+            Seek(s) => s.poll(&self.context),
         }
     }
 }

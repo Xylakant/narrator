@@ -83,7 +83,7 @@ pub fn rainbow_crawler<const LEDS: usize, const MAX_STEPS: usize>(
         .iter_mut()
         .zip(plan)
         .for_each(|(scr, pla)| {
-            scr.set(*pla, behavior.clone())
+            scr.set(pla, behavior.clone())
         })
 }
 
@@ -133,116 +133,116 @@ pub fn color_walker<const LEDS: usize, const MAX_STEPS: usize>(
     let color_7_8 = walk_color.mul_then_div(7, 8);
     let color_8_8 = walk_color;
 
-    let plan: &[&[_]] = &[
+    let plan: &[[_; 8]] = &[
         script! {
-            | action |      color | duration_ms | period_ms_f | (phase_offset_ms) |  repeat |
-            |    cos |  color_1_8 |         250 |      2000.0 | (            250) |    once |
-            |    cos |  color_2_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_3_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_4_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_5_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_6_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_7_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_8_8 |        2000 |      2000.0 | ( AutoIncr) | forever |
+            | action |      color | (duration_ms) | (period_ms_f) | (phase_offset_ms) |  repeat |
+            |    cos |  color_1_8 | (        250) | (     2000.0) | (            250) |    once |
+            |    cos |  color_2_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_3_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_4_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_5_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_6_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_7_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_8_8 | (       2000) | (     2000.0) | (       AutoIncr) | forever |
         },
         script! {
-            | action |      color | duration_ms | period_ms_f | (phase_offset_ms) |  repeat |
-            |    cos |  color_1_8 |         250 |      2000.0 | (            500) |    once |
-            |    cos |  color_2_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_3_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_4_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_5_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_6_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_7_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_8_8 |        2000 |      2000.0 | ( AutoIncr) | forever |
+            | action |      color | (duration_ms) | (period_ms_f) | (phase_offset_ms) |  repeat |
+            |    cos |  color_1_8 | (        250) | (     2000.0) | (            500) |    once |
+            |    cos |  color_2_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_3_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_4_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_5_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_6_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_7_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_8_8 | (       2000) | (     2000.0) | (       AutoIncr) | forever |
         },
         script! {
-            | action |      color | duration_ms | period_ms_f | (phase_offset_ms) |  repeat |
-            |    cos |  color_1_8 |         250 |      2000.0 | (            750) |    once |
-            |    cos |  color_2_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_3_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_4_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_5_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_6_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_7_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_8_8 |        2000 |      2000.0 | ( AutoIncr) | forever |
+            | action |      color | (duration_ms) | (period_ms_f) | (phase_offset_ms) |  repeat |
+            |    cos |  color_1_8 | (        250) | (     2000.0) | (            750) |    once |
+            |    cos |  color_2_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_3_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_4_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_5_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_6_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_7_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_8_8 | (       2000) | (     2000.0) | (       AutoIncr) | forever |
         },
         script! {
-            | action |      color | duration_ms | period_ms_f | (phase_offset_ms) |  repeat |
-            |    cos |  color_1_8 |         250 |      2000.0 | (           1000) |    once |
-            |    cos |  color_2_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_3_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_4_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_5_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_6_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_7_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_8_8 |        2000 |      2000.0 | ( AutoIncr) | forever |
+            | action |      color | (duration_ms) | (period_ms_f) | (phase_offset_ms) |  repeat |
+            |    cos |  color_1_8 | (        250) | (     2000.0) | (           1000) |    once |
+            |    cos |  color_2_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_3_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_4_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_5_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_6_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_7_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_8_8 | (       2000) | (     2000.0) | (       AutoIncr) | forever |
         },
         script! {
-            | action |      color | duration_ms | period_ms_f | (phase_offset_ms) |  repeat |
-            |    cos |  color_1_8 |         250 |      2000.0 | (           1250) |    once |
-            |    cos |  color_2_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_3_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_4_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_5_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_6_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_7_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_8_8 |        2000 |      2000.0 | ( AutoIncr) | forever |
+            | action |      color | (duration_ms) | (period_ms_f) | (phase_offset_ms) |  repeat |
+            |    cos |  color_1_8 | (        250) | (     2000.0) | (           1250) |    once |
+            |    cos |  color_2_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_3_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_4_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_5_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_6_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_7_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_8_8 | (       2000) | (     2000.0) | (       AutoIncr) | forever |
         },
         script! {
-            | action |      color | duration_ms | period_ms_f | (phase_offset_ms) |  repeat |
-            |    cos |  color_1_8 |         250 |      2000.0 | (           1500) |    once |
-            |    cos |  color_2_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_3_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_4_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_5_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_6_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_7_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_8_8 |        2000 |      2000.0 | ( AutoIncr) | forever |
+            | action |      color | (duration_ms) | (period_ms_f) | (phase_offset_ms) |  repeat |
+            |    cos |  color_1_8 | (        250) | (     2000.0) | (           1500) |    once |
+            |    cos |  color_2_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_3_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_4_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_5_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_6_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_7_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_8_8 | (       2000) | (     2000.0) | (       AutoIncr) | forever |
         },
         script! {
-            | action |      color | duration_ms | period_ms_f | (phase_offset_ms) |  repeat |
-            |    cos |  color_1_8 |         250 |      2000.0 | (           1750) |    once |
-            |    cos |  color_2_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_3_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_4_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_5_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_6_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_7_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_8_8 |        2000 |      2000.0 | ( AutoIncr) | forever |
+            | action |      color | (duration_ms) | (period_ms_f) | (phase_offset_ms) |  repeat |
+            |    cos |  color_1_8 | (        250) | (     2000.0) | (           1750) |    once |
+            |    cos |  color_2_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_3_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_4_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_5_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_6_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_7_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_8_8 | (       2000) | (     2000.0) | (       AutoIncr) | forever |
         },
         script! {
-            | action |      color | duration_ms | period_ms_f | (phase_offset_ms) |  repeat |
-            |    cos |  color_1_8 |         250 |      2000.0 | (           2000) |    once |
-            |    cos |  color_2_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_3_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_4_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_5_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_6_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_7_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_8_8 |        2000 |      2000.0 | ( AutoIncr) | forever |
+            | action |      color | (duration_ms) | (period_ms_f) | (phase_offset_ms) |  repeat |
+            |    cos |  color_1_8 | (        250) | (     2000.0) | (           2000) |    once |
+            |    cos |  color_2_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_3_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_4_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_5_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_6_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_7_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_8_8 | (       2000) | (     2000.0) | (       AutoIncr) | forever |
         },
         script! {
-            | action |      color | duration_ms | period_ms_f | (phase_offset_ms) |  repeat |
-            |    cos |  color_1_8 |         250 |      2000.0 | (           2250) |    once |
-            |    cos |  color_2_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_3_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_4_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_5_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_6_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_7_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_8_8 |        2000 |      2000.0 | ( AutoIncr) | forever |
+            | action |      color | (duration_ms) | (period_ms_f) | (phase_offset_ms) |  repeat |
+            |    cos |  color_1_8 | (        250) | (     2000.0) | (           2250) |    once |
+            |    cos |  color_2_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_3_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_4_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_5_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_6_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_7_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_8_8 | (       2000) | (     2000.0) | (       AutoIncr) | forever |
         },
         script! {
-            | action |      color | duration_ms | period_ms_f | (phase_offset_ms) |  repeat |
-            |    cos |  color_1_8 |         250 |      2000.0 | (           2500) |    once |
-            |    cos |  color_2_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_3_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_4_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_5_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_6_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_7_8 |         250 |      2000.0 | (       AutoIncr) |    once |
-            |    cos |  color_8_8 |        2000 |      2000.0 | ( AutoIncr) | forever |
+            | action |      color | (duration_ms) | (period_ms_f) | (phase_offset_ms) |  repeat |
+            |    cos |  color_1_8 | (        250) | (     2000.0) | (           2500) |    once |
+            |    cos |  color_2_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_3_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_4_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_5_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_6_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_7_8 | (        250) | (     2000.0) | (       AutoIncr) |    once |
+            |    cos |  color_8_8 | (       2000) | (     2000.0) | (       AutoIncr) | forever |
         }
     ];
 
@@ -258,8 +258,33 @@ pub fn color_walker<const LEDS: usize, const MAX_STEPS: usize>(
         .iter_mut()
         .zip(plan)
         .for_each(|(scr, pla)| {
-            scr.set(*pla, behavior.clone())
+            scr.set(pla, behavior.clone())
         })
+}
+
+pub fn boot_seq<const LEDS: usize, const MAX_STEPS: usize>(
+    script: &mut [Sequence<GlobalRollingTimer, MAX_STEPS>; LEDS],
+    behavior: Behavior,
+    _direction: Direction,
+) {
+    let mut delay = 0;
+
+    script.iter_mut()
+        .for_each(|scr| {
+            let plan = script! {
+                | action |   color | ( duration_ms) | (period_ms_f) | (phase_offset_ms) | repeat |
+                |   seek |    BLUE | (2500 + delay) | (        0.0) | (              0) |   once |
+                |   seek |     RED | (          50) | (        0.0) | (              0) |   once |
+                |   seek |  ORANGE | (          50) | (        0.0) | (              0) |   once |
+                |   seek |  YELLOW | (          50) | (        0.0) | (              0) |   once |
+                |   seek |   GREEN | (          50) | (        0.0) | (              0) |   once |
+                |   seek |    BLUE | (          50) | (        0.0) | (              0) |   once |
+                |   seek |  VIOLET | (          50) | (        0.0) | (              0) |   once |
+                |   seek |  BLACK  | (         100) | (        0.0) | (              0) |   once |
+            };
+            scr.set(&plan, behavior.clone());
+            delay += 50;
+        });
 }
 
 #[derive(Clone, Copy)]

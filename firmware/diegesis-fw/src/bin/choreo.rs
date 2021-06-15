@@ -4,8 +4,7 @@
 use choreographer::engine::Behavior;
 use choreographer::engine::Sequence;
 use diegesis_fw::patterns::Direction;
-use diegesis_fw::patterns::color_walker;
-use diegesis_fw::patterns::rainbow_crawler;
+use diegesis_fw::patterns::{color_walker, boot_seq, rainbow_crawler, rainbow_pulse};
 use diegesis_fw::{
     self as _, // global logger + panicking-behavior + memory layout
     groundhog_nrf52::GlobalRollingTimer
@@ -17,6 +16,7 @@ use nrf52840_hal::{
     pac,
 };
 use nrf_smartled::pwm::Pwm;
+use smart_leds::colors::BLUE;
 use smart_leds::{colors, gamma, brightness, SmartLedsWrite};
 
 #[cortex_m_rt::entry]
@@ -70,41 +70,44 @@ fn main() -> ! {
     let mut script: [Sequence<GlobalRollingTimer, 8>; 10] = Sequence::new_array();
 
     // Update the screen
-    rainbow_crawler(
+    let pulse = timer.get_ticks();
+    boot_seq(
         &mut script,
         Behavior::OneShot,
         Direction::Clockwise,
     );
+
     let reset_clock = timer.get_ticks();
     let mut oneshot = false;
+    let mut twoshot = false;
 
     loop {
         let start = timer.get_ticks();
         let mut any = false;
 
-        if !oneshot && timer.millis_since(reset_clock) >= 4000 {
+        if !twoshot && timer.millis_since(reset_clock) >= 5000 {
             color_walker(
                 &mut script,
                 colors::CORNFLOWER_BLUE,
                 Behavior::LoopForever,
                 Direction::Clockwise
             );
-            oneshot = true;
+            twoshot = true;
         }
 
-        let start = timer.get_ticks();
+        let upd_start = timer.get_ticks();
         for (led, scr) in data.iter_mut().zip(script.iter_mut()) {
             if let Some(pix) = scr.poll() {
                 any |= *led != pix;
                 *led = pix;
             }
         }
-        let update_time = timer.micros_since(start);
-        let start = timer.get_ticks();
+        let update_time = timer.micros_since(upd_start);
+        let disp_start = timer.get_ticks();
 
         if any {
             led.write(brightness(gamma(data.iter().cloned()), 32)).unwrap();
-            let display_time = timer.micros_since(start);
+            let display_time = timer.micros_since(disp_start);
             defmt::info!("Render: {=u32:}us Display: {=u32:}us", update_time, display_time);
         }
 
