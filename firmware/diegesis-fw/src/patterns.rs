@@ -271,16 +271,18 @@ pub fn boot_seq<const LEDS: usize, const MAX_STEPS: usize>(
 
     script.iter_mut()
         .for_each(|scr| {
+            let period_f = 2500.0 + (delay as f32) * 1.5;
+
             let plan = script! {
-                | action |   color | ( duration_ms) | (period_ms_f) | (phase_offset_ms) | repeat |
-                |   seek |    BLUE | (2500 + delay) | (        0.0) | (              0) |   once |
-                |   seek |     RED | (          50) | (        0.0) | (              0) |   once |
-                |   seek |  ORANGE | (          50) | (        0.0) | (              0) |   once |
-                |   seek |  YELLOW | (          50) | (        0.0) | (              0) |   once |
-                |   seek |   GREEN | (          50) | (        0.0) | (              0) |   once |
-                |   seek |    BLUE | (          50) | (        0.0) | (              0) |   once |
-                |   seek |  VIOLET | (          50) | (        0.0) | (              0) |   once |
-                |   seek |  BLACK  | (         100) | (        0.0) | (              0) |   once |
+                | action  |   color | ( duration_ms) | (period_ms_f) | (phase_offset_ms) | repeat |
+                |    sin  |    BLUE | (2500 + delay) | (   period_f) | (              0) |   once |
+                |   seek  |     RED | (          50) | (        0.0) | (              0) |   once |
+                |   seek  |  ORANGE | (          50) | (        0.0) | (              0) |   once |
+                |   seek  |  YELLOW | (          50) | (        0.0) | (              0) |   once |
+                |   seek  |   GREEN | (          50) | (        0.0) | (              0) |   once |
+                |   seek  |    BLUE | (          50) | (        0.0) | (              0) |   once |
+                |   seek  |  VIOLET | (          50) | (        0.0) | (              0) |   once |
+                |   seek  |  BLACK  | (         100) | (        0.0) | (              0) |   once |
             };
             scr.set(&plan, behavior.clone());
             delay += 50;

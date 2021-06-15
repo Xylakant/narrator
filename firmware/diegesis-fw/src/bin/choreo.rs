@@ -4,7 +4,7 @@
 use choreographer::engine::Behavior;
 use choreographer::engine::Sequence;
 use diegesis_fw::patterns::Direction;
-use diegesis_fw::patterns::{color_walker, boot_seq, rainbow_crawler, rainbow_pulse};
+use diegesis_fw::patterns::{color_walker, boot_seq, rainbow_crawler};
 use diegesis_fw::{
     self as _, // global logger + panicking-behavior + memory layout
     groundhog_nrf52::GlobalRollingTimer
