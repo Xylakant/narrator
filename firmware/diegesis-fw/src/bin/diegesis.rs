@@ -4,7 +4,10 @@
 use core::ops::DerefMut;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use diegesis_fw::{groundhog_nrf52::GlobalRollingTimer, profiler, spim_src::SpimSrc, FillBuf};
+use cortex_m::prelude::_embedded_hal_adc_OneShot;
+use diegesis_fw::{
+    groundhog_nrf52::GlobalRollingTimer, profiler, saadc_src::SaadcSrc, spim_src::SpimSrc, FillBuf,
+};
 use diegesis_icd::{DataReport, Managed};
 
 use bbqueue::{consts as bbconsts, BBBuffer, ConstBBBuffer};
@@ -22,9 +25,12 @@ use nrf52840_hal::{
         p0::Parts as P0Parts, p1::Parts as P1Parts, Input, Level, Output, Pin, PullUp, PushPull,
     },
     pac::{Interrupt, SPIM0, SPIM1, SPIM2, SPIM3},
+    prelude::*,
+    saadc::{Saadc, SaadcConfig},
     spim::Frequency,
     usbd::Usbd,
 };
+
 use postcard::to_rlercobs_writer;
 use rtic::app;
 use usb_device::{bus::UsbBusAllocator, class::UsbClass as _, device::UsbDeviceState, prelude::*};
@@ -45,6 +51,7 @@ profiler!(Profiler {
     spim_p1_ints,
     spim_p2_ints,
     spim_p3_ints,
+    saadc_ints,
     usb_writes,
     report_sers,
     bbq_push_bytes,
@@ -85,6 +92,8 @@ impl ButtonDebounce {
     }
 }
 
+type AdcPin = nrf52840_hal::gpio::p0::P0_02<Input<nrf52840_hal::gpio::Floating>>;
+
 #[app(device = nrf52840_hal::pac, peripherals = true)]
 const APP: () = {
     struct Resources {
@@ -96,6 +105,7 @@ const APP: () = {
         spim_p3: SpimSrc<SPIM3, A, 32>,
         start_stop_btn: Pin<Input<PullUp>>,
         start_stop_led: Pin<Output<PushPull>>,
+        saadc: SaadcSrc<A, 32>,
     }
 
     #[init]
@@ -177,6 +187,13 @@ const APP: () = {
             GlobalRollingTimer,
         );
 
+        let saadc: SaadcSrc<A, 32> = SaadcSrc::from_parts(
+            board.SAADC,
+            gpios_p0.p0_02.degrade(),
+            &POOL_QUEUE,
+            GlobalRollingTimer,
+        );
+
         let start_stop_btn = gpios_p0.p0_25.into_pullup_input().degrade();
         let start_stop_led = gpios_p0.p0_16.into_push_pull_output(Level::High).degrade();
 
@@ -201,6 +218,8 @@ const APP: () = {
             spim_p1: spim1,
             spim_p2: spim2,
             spim_p3: spim3,
+
+            saadc,
 
             start_stop_btn,
             start_stop_led,
@@ -231,7 +250,13 @@ const APP: () = {
         c.resources.spim_p3.poll(&FUSE);
     }
 
-    #[idle(resources = [usb_dev, serial, start_stop_btn, start_stop_led])]
+    #[task(binds = SAADC, resources = [saadc])]
+    fn saadc(c: saadc::Context) {
+        PROFILER.saadc_ints();
+        c.resources.saadc.poll(&FUSE);
+    }
+
+    #[idle(resources = [usb_dev, serial, start_stop_btn, start_stop_led, saadc])]
     fn idle(mut c: idle::Context) -> ! {
         let mut state: UsbDeviceState = UsbDeviceState::Default;
         let timer = GlobalRollingTimer::new();
@@ -239,6 +264,7 @@ const APP: () = {
 
         let start = timer.get_ticks();
         let mut last_profile = start;
+        let mut last_adc = start;
         let mut fuse_timeout = None;
 
         let mut button = ButtonDebounce::StableHigh;
@@ -298,6 +324,7 @@ const APP: () = {
                         rtic::pend(Interrupt::SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1);
                         rtic::pend(Interrupt::SPIM2_SPIS2_SPI2);
                         rtic::pend(Interrupt::SPIM3);
+                        rtic::pend(Interrupt::SAADC);
                         c.resources.start_stop_led.set_low().ok();
                         running = true;
                     }

@@ -11,6 +11,7 @@ use nrf52840_hal::{
 use kolben::rlercobs;
 
 pub mod spim_src;
+pub mod saadc_src;
 pub mod groundhog_nrf52;
 pub mod patterns;
 
