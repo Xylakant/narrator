@@ -4,6 +4,7 @@
 use core::ops::DerefMut;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use diegesis_fw::saadc_src::SaadcSrc;
 use diegesis_fw::{groundhog_nrf52::GlobalRollingTimer, profiler, spim_src::SpimSrc, FillBuf};
 use diegesis_icd::{DataReport, Managed};
 
@@ -16,6 +17,10 @@ use heapless::{
     pool::singleton::{Box, Pool},
     pool::Init,
 };
+use nrf52840_hal::gpio::p0::{P0_02, P0_03};
+use nrf52840_hal::gpio::Disconnected;
+use nrf52840_hal::ppi;
+use nrf52840_hal::ppi::Ppi0;
 use nrf52840_hal::{
     clocks::{Clocks, ExternalOscillator, Internal, LfOscStopped},
     gpio::{
@@ -45,6 +50,7 @@ profiler!(Profiler {
     spim_p1_ints,
     spim_p2_ints,
     spim_p3_ints,
+    saadc_ints,
     usb_writes,
     report_sers,
     bbq_push_bytes,
@@ -94,6 +100,7 @@ const APP: () = {
         spim_p1: SpimSrc<SPIM1, A, 32>,
         spim_p2: SpimSrc<SPIM2, A, 32>,
         spim_p3: SpimSrc<SPIM3, A, 32>,
+        saadc: SaadcSrc<(P0_02<Disconnected>, P0_03<Disconnected>), A, Ppi0, 32>,
         start_stop_btn: Pin<Input<PullUp>>,
         start_stop_led: Pin<Output<PushPull>>,
     }
@@ -177,6 +184,10 @@ const APP: () = {
             GlobalRollingTimer,
         );
 
+        let ppi = ppi::Parts::new(board.PPI);
+        let saadc_pins = (gpios_p0.p0_02, gpios_p0.p0_03);
+        let saadc = SaadcSrc::new(board.SAADC, saadc_pins, ppi.ppi0, &POOL_QUEUE);
+
         let start_stop_btn = gpios_p0.p0_25.into_pullup_input().degrade();
         let start_stop_led = gpios_p0.p0_16.into_push_pull_output(Level::High).degrade();
 
@@ -201,6 +212,7 @@ const APP: () = {
             spim_p1: spim1,
             spim_p2: spim2,
             spim_p3: spim3,
+            saadc,
 
             start_stop_btn,
             start_stop_led,
@@ -229,6 +241,12 @@ const APP: () = {
     fn spim_p3(c: spim_p3::Context) {
         PROFILER.spim_p3_ints();
         c.resources.spim_p3.poll(&FUSE);
+    }
+
+    #[task(binds = SAADC, resources = [saadc])]
+    fn saadc(c: saadc::Context) {
+        PROFILER.saadc_ints();
+        c.resources.saadc.poll(&FUSE);
     }
 
     #[idle(resources = [usb_dev, serial, start_stop_btn, start_stop_led])]

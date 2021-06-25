@@ -3,16 +3,18 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use defmt_rtt as _; // global logger
-use panic_probe as _;
+use kolben::rlercobs;
 use nrf52840_hal::{
     self as _, // memory layout
     target_constants::SRAM_UPPER,
 };
-use kolben::rlercobs;
+use panic_probe as _;
 
-pub mod spim_src;
 pub mod groundhog_nrf52;
 pub mod patterns;
+mod saadc;
+pub mod saadc_src;
+pub mod spim_src;
 
 #[macro_use]
 pub mod profile_ct;
@@ -39,7 +41,6 @@ pub fn exit() -> ! {
     }
 }
 
-
 pub type PBox<T> = heapless::pool::singleton::Box<T>;
 
 use embedded_dma::ReadBuffer;
@@ -55,7 +56,7 @@ unsafe impl ReadBuffer for NopSlice {
     }
 }
 
-use bbqueue::{GrantW, consts as bbconsts};
+use bbqueue::{consts as bbconsts, GrantW};
 
 #[derive(Debug)]
 pub struct FillBuf {
