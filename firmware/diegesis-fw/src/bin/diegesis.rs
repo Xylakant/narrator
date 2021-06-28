@@ -5,12 +5,12 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use diegesis_fw::{
     groundhog_nrf52::GlobalRollingTimer, profiler, saadc_src::SaadcSrc, spim_src::SpimSrc, FillBuf,
-    InternalReport,
+    InternalReport, Board, pinmap::{PinMap, Leds},
 };
 use nrf52840_hal::{
     clocks::{Clocks, ExternalOscillator, Internal, LfOscStopped},
     gpio::{
-        p0::{Parts as P0Parts, P0_02, P0_03},
+        p0::{Parts as P0Parts, P0_02, P0_03, P0_29},
         p1::Parts as P1Parts,
         Disconnected, Input, Level, Output, Pin, PullUp, PushPull,
     },
@@ -101,7 +101,7 @@ const APP: () = {
         spim_p2: SpimSrc<SPIM2, allocs::DIGITAL_POOL, allocs::ANALOG_POOL, 32>,
         spim_p3: SpimSrc<SPIM3, allocs::DIGITAL_POOL, allocs::ANALOG_POOL, 32>,
         saadc: SaadcSrc<
-            (P0_02<Disconnected>, P0_03<Disconnected>),
+            (P0_02<Disconnected>, P0_03<Disconnected>, P0_29<Disconnected>),
             allocs::ANALOG_POOL,
             allocs::DIGITAL_POOL,
             Ppi0,
@@ -153,13 +153,15 @@ const APP: () = {
 
         GlobalRollingTimer::init(board.TIMER0);
         let usbd = board.USBD;
+
         let gpios_p0 = P0Parts::new(board.P0);
         let gpios_p1 = P1Parts::new(board.P1);
+        let pins = Board::map_pins(gpios_p0, gpios_p1);
 
         let spim0 = SpimSrc::from_parts(
             board.SPIM0,
-            gpios_p0.p0_11.degrade(),
-            gpios_p1.p1_01.degrade(),
+            pins.spim_p0_data,
+            pins.spim_p0_clk,
             &POOL_QUEUE,
             Frequency::M2,
             GlobalRollingTimer,
@@ -168,8 +170,8 @@ const APP: () = {
 
         let spim1 = SpimSrc::from_parts(
             board.SPIM1,
-            gpios_p1.p1_03.degrade(),
-            gpios_p1.p1_02.degrade(),
+            pins.spim_p1_data,
+            pins.spim_p1_clk,
             &POOL_QUEUE,
             Frequency::M2,
             GlobalRollingTimer,
@@ -178,8 +180,8 @@ const APP: () = {
 
         let spim2 = SpimSrc::from_parts(
             board.SPIM2,
-            gpios_p1.p1_05.degrade(),
-            gpios_p1.p1_04.degrade(),
+            pins.spim_p2_data,
+            pins.spim_p2_clk,
             &POOL_QUEUE,
             Frequency::M2,
             GlobalRollingTimer,
@@ -188,8 +190,8 @@ const APP: () = {
 
         let spim3 = SpimSrc::from_parts(
             board.SPIM3,
-            gpios_p1.p1_07.degrade(),
-            gpios_p1.p1_06.degrade(),
+            pins.spim_p3_data,
+            pins.spim_p3_clk,
             &POOL_QUEUE,
             Frequency::M2,
             GlobalRollingTimer,
@@ -197,11 +199,14 @@ const APP: () = {
         );
 
         let ppi = ppi::Parts::new(board.PPI);
-        let saadc_pins = (gpios_p0.p0_02, gpios_p0.p0_03);
-        let saadc = SaadcSrc::new(board.SAADC, saadc_pins, ppi.ppi0, &POOL_QUEUE);
+        let saadc = SaadcSrc::new(board.SAADC, pins.adcs, ppi.ppi0, &POOL_QUEUE);
 
-        let start_stop_btn = gpios_p0.p0_25.into_pullup_input().degrade();
-        let start_stop_led = gpios_p0.p0_16.into_push_pull_output(Level::High).degrade();
+        let start_stop_btn = pins.start_pause_btn.into_pullup_input();
+        let start_stop_led = if let Leds::DiscreteLeds { led3, .. } = pins.leds {
+            led3.into_push_pull_output(Level::High)
+        } else {
+            defmt::panic!("What?!?!");
+        };
 
         *CLOCKS = Some(clocks);
         let clocks = CLOCKS.as_ref().unwrap();
