@@ -1,8 +1,10 @@
 #![no_std]
 
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::{ops::DerefMut, sync::atomic::{AtomicUsize, Ordering}};
 
-use defmt_rtt as _; // global logger
+use defmt_rtt as _;
+use diegesis_icd::{DataReport, ReportKind, Managed};
+// global logger
 use kolben::rlercobs;
 use nrf52840_hal::{
     self as _, // memory layout
@@ -79,5 +81,78 @@ impl rlercobs::Write for FillBuf {
         *buf_byte = byte;
         self.used += 1;
         Ok(())
+    }
+}
+
+use heapless::pool::singleton::Pool;
+use core::fmt::Debug;
+
+#[derive(Debug)]
+pub struct InternalReport<PoolA, PoolB>
+where
+    PoolA: Pool,
+    PoolB: Pool,
+    PBox<PoolA>: Debug,
+    PBox<PoolB>: Debug,
+
+{
+    timestamp: u32,
+    kind: InternalReportKind<PoolA, PoolB>,
+}
+
+#[derive(Debug)]
+pub enum InternalReportKind<PoolA, PoolB>
+where
+    PoolA: Pool,
+    PoolB: Pool,
+    PBox<PoolA>: Debug,
+    PBox<PoolB>: Debug,
+
+{
+    DigitalReport {
+        channel: u8,
+        payload: PBox<PoolA>,
+    },
+    AnalogReport {
+        channel_bitflag: u8,
+        payload: PBox<PoolB>,
+    }
+}
+
+impl<DigitalPool, AnalogPool> InternalReport<DigitalPool, AnalogPool>
+where
+    DigitalPool: Pool,
+    AnalogPool: Pool,
+    PBox<DigitalPool>: Debug + DerefMut<Target = [u8; 4096]>,
+    PBox<AnalogPool>: Debug + DerefMut<Target = [i16; 2048]>,
+{
+    pub fn as_data_report(&mut self) -> DataReport {
+        match self.kind {
+            InternalReportKind::DigitalReport { channel, ref mut payload } => {
+                DataReport {
+                    timestamp: self.timestamp,
+                    kind: ReportKind::DigitalPin { channel },
+                    payload: Managed::Borrowed(payload.deref_mut()),
+                }
+            }
+            InternalReportKind::AnalogReport { channel_bitflag, ref mut payload } => {
+                // SAFETY: We have an array of i16s we are re-interpreting to bytes
+                // This is acceptable as all data is initialized (by DMA), and bytes
+                // have a weaker alignment than i16s. For both u8 and i16s, all possible
+                // values are valid
+                let casted_slice: &mut [u8; 4096] = unsafe {
+                    let i16_slice: &mut [i16; 2048] = payload.deref_mut();
+                    core::mem::transmute(i16_slice)
+                };
+
+                DataReport {
+                    timestamp: self.timestamp,
+                    kind: ReportKind::AnalogPin { channel_bitflag },
+                    payload: Managed::Borrowed(casted_slice),
+                }
+            }
+        };
+
+        todo!()
     }
 }

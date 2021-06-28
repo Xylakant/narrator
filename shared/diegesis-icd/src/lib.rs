@@ -1,19 +1,24 @@
 #![cfg_attr(not(feature = "use-std"), no_std)]
 
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use serde::ser::{Serializer, SerializeTuple};
 pub use managed::Managed;
 
+#[derive(Debug, Serialize, Deserialize)]
+pub enum ReportKind {
+    DigitalPin { channel: u8 },
+    AnalogPin { channel_bitflag: u8, },
+}
+
 #[cfg(feature = "use-std")]
-use serde::{
-    Deserialize,
-    de::{Deserializer, Visitor, SeqAccess},
-};
+use serde::de::{Deserializer, Visitor, SeqAccess};
 
 #[derive(Serialize, Debug)]
 #[cfg_attr(feature = "use-std", derive(Deserialize))]
 pub struct DataReport<'a> {
     pub timestamp: u32,
+
+    pub kind: ReportKind,
 
     #[serde(serialize_with = "slicer")]
     #[cfg_attr(feature = "use-std", serde(deserialize_with = "unslicer"))]

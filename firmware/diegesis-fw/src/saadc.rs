@@ -194,6 +194,10 @@ pub trait Channels {
     #[doc(hidden)]
     fn channels(&self, channels: &mut [u8; 8]);
     // NB: this doesn't return `[u8; Self::LEN]` because of limitations in current Rust
+
+    /// Returns the active channels (1..=8) as a bitflag
+    #[doc(hidden)]
+    fn bitflag(&self) -> u8;
 }
 
 macro_rules! channel_tuples {
@@ -207,9 +211,31 @@ macro_rules! channel_tuples {
                 fn channels(&self, channels: &mut [u8; 8]) {
                     channels[..$len].copy_from_slice(&[$($t::channel(),)+]);
                 }
+
+                fn bitflag(&self) -> u8 {
+                    let mut flag = 0;
+                    for ch_bf in &[$(channel_to_bitflag($t::channel()),)+] {
+                        flag |= ch_bf;
+                    }
+                    flag
+                }
             }
         )+
     };
+}
+
+fn channel_to_bitflag(ch_id: u8) -> u8 {
+    match ch_id {
+        1 => 0b0000_0001,
+        2 => 0b0000_0010,
+        3 => 0b0000_0100,
+        4 => 0b0000_1000,
+        5 => 0b0001_0000,
+        6 => 0b0010_0000,
+        7 => 0b0100_0000,
+        8 => 0b1000_0000,
+        _ => 0b000000000,
+    }
 }
 
 impl<T: Channel<Saadc, ID = u8>> Channels for T {
@@ -217,6 +243,10 @@ impl<T: Channel<Saadc, ID = u8>> Channels for T {
 
     fn channels(&self, channels: &mut [u8; 8]) {
         channels[0] = T::channel();
+    }
+
+    fn bitflag(&self) -> u8 {
+        channel_to_bitflag(T::channel())
     }
 }
 
