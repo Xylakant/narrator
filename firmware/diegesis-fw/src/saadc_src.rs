@@ -165,7 +165,6 @@ where
                 // Attempt to finish any current transfer though, since we already
                 // have the alloc page
                 if ts.is_done() {
-                    defmt::trace!("OnePending: is_done");
                     let (p, rxb, c) = ts.wait();
 
                     /*let elapsed = GlobalRollingTimer.ticks_since(self.last_start);
@@ -204,7 +203,6 @@ where
                     self.ppi.enable();
 
                     let pend = ts.enqueue_next_transfer(pbox).map_err(drop).unwrap();
-                    defmt::trace!("OnePending -> TwoPending");
 
                     State::TwoPending(pend)
                 } else {
