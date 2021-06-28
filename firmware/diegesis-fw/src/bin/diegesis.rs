@@ -14,8 +14,8 @@ use nrf52840_hal::{
         p1::Parts as P1Parts,
         Disconnected, Input, Level, Output, Pin, PullUp, PushPull,
     },
-    pac::{Interrupt, SPIM0, SPIM1, SPIM2, SPIM3},
-    ppi::{self, Ppi0},
+    pac::{Interrupt, SPIM0, SPIM1, SPIM2, SPIM3, TIMER1},
+    ppi::{self, Ppi0, Ppi1},
     spim::Frequency,
     usbd::Usbd,
 };
@@ -102,9 +102,11 @@ const APP: () = {
         spim_p3: SpimSrc<SPIM3, allocs::DIGITAL_POOL, allocs::ANALOG_POOL, 32>,
         saadc: SaadcSrc<
             (P0_02<Disconnected>, P0_03<Disconnected>),
+            TIMER1,
             allocs::ANALOG_POOL,
             allocs::DIGITAL_POOL,
             Ppi0,
+            Ppi1,
             32,
         >,
         start_stop_btn: Pin<Input<PullUp>>,
@@ -198,7 +200,14 @@ const APP: () = {
 
         let ppi = ppi::Parts::new(board.PPI);
         let saadc_pins = (gpios_p0.p0_02, gpios_p0.p0_03);
-        let saadc = SaadcSrc::new(board.SAADC, saadc_pins, ppi.ppi0, &POOL_QUEUE);
+        let saadc = SaadcSrc::new(
+            board.SAADC,
+            board.TIMER1,
+            saadc_pins,
+            ppi.ppi0,
+            ppi.ppi1,
+            &POOL_QUEUE,
+        );
 
         let start_stop_btn = gpios_p0.p0_25.into_pullup_input().degrade();
         let start_stop_led = gpios_p0.p0_16.into_push_pull_output(Level::High).degrade();
@@ -328,6 +337,7 @@ const APP: () = {
                         rtic::pend(Interrupt::SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1);
                         rtic::pend(Interrupt::SPIM2_SPIS2_SPI2);
                         rtic::pend(Interrupt::SPIM3);
+                        rtic::pend(Interrupt::SAADC);
                         c.resources.start_stop_led.set_low().ok();
                         running = true;
                     }
