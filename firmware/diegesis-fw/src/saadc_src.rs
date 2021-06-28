@@ -3,14 +3,10 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use embedded_dma::StaticWriteBuffer;
-use groundhog::RollingTimer;
-use heapless::{
-    mpmc::MpMcQueue,
-    pool::{
-        Init,
-        singleton::{Box, Pool},
-    },
+use crate::{
+    groundhog_nrf52::GlobalRollingTimer,
+    saadc::{AsyncConversion, AsyncPendingConversion, Channels, Saadc, SaadcConfig},
+    InternalReport,
 };
 use nrf52840_hal::{
     pac::SAADC,
@@ -18,7 +14,15 @@ use nrf52840_hal::{
     saadc::{Oversample, Time},
 };
 
-use crate::{InternalReport, groundhog_nrf52::GlobalRollingTimer, saadc::{AsyncConversion, AsyncPendingConversion, Channels, Saadc, SaadcConfig}};
+use embedded_dma::StaticWriteBuffer;
+use groundhog::RollingTimer;
+use heapless::{
+    mpmc::MpMcQueue,
+    pool::{
+        singleton::{Box, Pool},
+        Init,
+    },
+};
 
 type PBox<POOL> = Box<POOL, Init>;
 use core::fmt::Debug;
@@ -150,7 +154,7 @@ where
                         kind: crate::InternalReportKind::AnalogReport {
                             channel_bitflag: self.bitflag,
                             payload: rxb,
-                        }
+                        },
                     };
 
                     if let Ok(()) = self.pool_q.enqueue(rpt) {
@@ -201,7 +205,7 @@ where
                     kind: crate::InternalReportKind::AnalogReport {
                         channel_bitflag: self.bitflag,
                         payload: buffer,
-                    }
+                    },
                 };
 
                 if let Ok(()) = self.pool_q.enqueue(rpt) {

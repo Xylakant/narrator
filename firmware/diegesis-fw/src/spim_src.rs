@@ -1,24 +1,17 @@
-use core::sync::atomic::AtomicBool;
-use core::sync::atomic::Ordering;
+use core::sync::atomic::{AtomicBool, Ordering};
+
+use crate::{groundhog_nrf52::GlobalRollingTimer, InternalReport, NopSlice};
+use nrf52840_hal::{
+    gpio::{Level, Pin},
+    pac::{spim0, SPIM0, SPIM1, SPIM2, SPIM3},
+    spim::{Frequency, Instance, PendingSplit, Pins, TransferSplit},
+    Spim,
+};
 
 use embedded_dma::WriteBuffer;
 use embedded_hal::spi::MODE_0;
 use groundhog::RollingTimer;
-use nrf52840_hal::Spim;
-use nrf52840_hal::gpio::Level;
-use nrf52840_hal::gpio::Pin;
-use nrf52840_hal::pac::{SPIM0, SPIM1, SPIM2, SPIM3};
-use nrf52840_hal::pac::spim0;
-use nrf52840_hal::spim::Frequency;
-use nrf52840_hal::spim::Instance;
-use nrf52840_hal::spim::PendingSplit;
-use nrf52840_hal::spim::Pins;
-use nrf52840_hal::spim::TransferSplit;
-use heapless::mpmc::MpMcQueue;
-use crate::NopSlice;
-use crate::groundhog_nrf52::GlobalRollingTimer;
-use heapless::pool::Init;
-use crate::InternalReport;
+use heapless::{mpmc::MpMcQueue, pool::Init};
 
 type PBox<POOL> = heapless::pool::singleton::Box<POOL, Init>;
 
@@ -26,7 +19,7 @@ pub enum SpimPeriph<S, POOL>
 where
     S: Instance + Shame + Send,
     POOL: heapless::pool::singleton::Pool + 'static,
-    PBox<POOL>: WriteBuffer<Word = u8>
+    PBox<POOL>: WriteBuffer<Word = u8>,
 {
     Idle(Spim<S>),
     OnePending(TransferSplit<S, NopSlice, PBox<POOL>>),
@@ -43,7 +36,7 @@ impl<S, POOL> SpimPeriph<S, POOL>
 where
     S: Instance + Shame + Send,
     POOL: heapless::pool::singleton::Pool + 'static,
-    PBox<POOL>: WriteBuffer<Word = u8>
+    PBox<POOL>: WriteBuffer<Word = u8>,
 {
     fn take(&mut self) -> Self {
         let mut new = SpimPeriph::Unstable;
@@ -146,11 +139,9 @@ where
         };
 
         // TODO: This probably should be dynamic
-        periph.intenset.modify(|_r, w| {
-            w.stopped().set_bit()
-             .end().set_bit()
-             .started().set_bit()
-        });
+        periph
+            .intenset
+            .modify(|_r, w| w.stopped().set_bit().end().set_bit().started().set_bit());
 
         // todo: calculate expected ticks automatically
         assert_eq!(freq, Frequency::M2, "TODO: UPDATE EXPECTED TICKS");
@@ -163,9 +154,9 @@ where
     pub fn poll(&mut self, fuse: &AtomicBool) {
         // TODO: removeme
         unsafe {
-            (&*T::shame_ptr()).events_stopped.write(|w| {
-                w.events_stopped().clear_bit()
-            });
+            (&*T::shame_ptr())
+                .events_stopped
+                .write(|w| w.events_stopped().clear_bit());
         }
 
         let fuse_blown = fuse.load(Ordering::SeqCst);
@@ -190,9 +181,9 @@ where
                 // Manually clear the started event, as we won't be
                 // clearing/processing it for the second queued write
                 unsafe {
-                    (&*T::shame_ptr()).events_started.write(|w| {
-                        w.events_started().clear_bit()
-                    });
+                    (&*T::shame_ptr())
+                        .events_started
+                        .write(|w| w.events_started().clear_bit());
                 }
 
                 // We shouldn't enqueue a new transfer, the fuse is blown.
@@ -233,10 +224,15 @@ where
 
                     // Enable end-to-start shortcut
                     unsafe {
-                        (&*T::shame_ptr()).shorts.modify(|_r, w| { w.end_start().set_bit() });
+                        (&*T::shame_ptr())
+                            .shorts
+                            .modify(|_r, w| w.end_start().set_bit());
                     }
 
-                    let p_txfr = ts.enqueue_next_transfer(NopSlice, pbox).map_err(drop).unwrap();
+                    let p_txfr = ts
+                        .enqueue_next_transfer(NopSlice, pbox)
+                        .map_err(drop)
+                        .unwrap();
 
                     SpimPeriph::TwoPending {
                         transfer: ts,
@@ -248,7 +244,10 @@ where
                     SpimPeriph::OnePending(ts)
                 }
             }
-            SpimPeriph::TwoPending { mut transfer, pending } => {
+            SpimPeriph::TwoPending {
+                mut transfer,
+                pending,
+            } => {
                 assert!(transfer.is_done());
                 let (_txb, rxb, one) = transfer.exchange_transfer_wait(pending);
 
@@ -262,7 +261,9 @@ where
 
                 // Disable end-to-start shortcut
                 unsafe {
-                    (&*T::shame_ptr()).shorts.modify(|_r, w| { w.end_start().clear_bit() });
+                    (&*T::shame_ptr())
+                        .shorts
+                        .modify(|_r, w| w.end_start().clear_bit());
                 }
 
                 let rpt = InternalReport {

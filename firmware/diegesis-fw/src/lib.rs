@@ -1,14 +1,22 @@
 #![no_std]
 
-use core::{ops::DerefMut, sync::atomic::{AtomicUsize, Ordering}};
+use core::{
+    fmt::Debug,
+    ops::DerefMut,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
-use defmt_rtt as _; // global logger
-use diegesis_icd::{DataReport, ReportKind, Managed};
-use kolben::rlercobs;
 use nrf52840_hal::{
     self as _, // memory layout
     target_constants::SRAM_UPPER,
 };
+
+use bbqueue::{consts as bbconsts, GrantW};
+use defmt_rtt as _; // global logger
+use diegesis_icd::{DataReport, Managed, ReportKind};
+use embedded_dma::ReadBuffer;
+use heapless::pool::singleton::Pool;
+use kolben::rlercobs;
 use panic_probe as _;
 
 pub mod groundhog_nrf52;
@@ -44,8 +52,6 @@ pub fn exit() -> ! {
 
 pub type PBox<T> = heapless::pool::singleton::Box<T>;
 
-use embedded_dma::ReadBuffer;
-
 pub struct NopSlice;
 
 unsafe impl ReadBuffer for NopSlice {
@@ -56,8 +62,6 @@ unsafe impl ReadBuffer for NopSlice {
         ((SRAM_UPPER - 1) as *const _, 0)
     }
 }
-
-use bbqueue::{consts as bbconsts, GrantW};
 
 #[derive(Debug)]
 pub struct FillBuf {
@@ -83,9 +87,6 @@ impl rlercobs::Write for FillBuf {
     }
 }
 
-use heapless::pool::singleton::Pool;
-use core::fmt::Debug;
-
 #[derive(Debug)]
 pub struct InternalReport<PoolA, PoolB>
 where
@@ -93,7 +94,6 @@ where
     PoolB: Pool,
     PBox<PoolA>: Debug,
     PBox<PoolB>: Debug,
-
 {
     timestamp: u32,
     kind: InternalReportKind<PoolA, PoolB>,
@@ -106,7 +106,6 @@ where
     PoolB: Pool,
     PBox<PoolA>: Debug,
     PBox<PoolB>: Debug,
-
 {
     DigitalReport {
         channel: u8,
@@ -115,7 +114,7 @@ where
     AnalogReport {
         channel_bitflag: u8,
         payload: PBox<PoolB>,
-    }
+    },
 }
 
 impl<DigitalPool, AnalogPool> InternalReport<DigitalPool, AnalogPool>
@@ -127,14 +126,18 @@ where
 {
     pub fn as_data_report(&mut self) -> DataReport {
         match self.kind {
-            InternalReportKind::DigitalReport { channel, ref mut payload } => {
-                DataReport {
-                    timestamp: self.timestamp,
-                    kind: ReportKind::DigitalPin { channel },
-                    payload: Managed::Borrowed(payload.deref_mut()),
-                }
-            }
-            InternalReportKind::AnalogReport { channel_bitflag, ref mut payload } => {
+            InternalReportKind::DigitalReport {
+                channel,
+                ref mut payload,
+            } => DataReport {
+                timestamp: self.timestamp,
+                kind: ReportKind::DigitalPin { channel },
+                payload: Managed::Borrowed(payload.deref_mut()),
+            },
+            InternalReportKind::AnalogReport {
+                channel_bitflag,
+                ref mut payload,
+            } => {
                 // SAFETY: We have an array of i16s we are re-interpreting to bytes
                 // This is acceptable as all data is initialized (by DMA), and bytes
                 // have a weaker alignment than i16s. For both u8 and i16s, all possible

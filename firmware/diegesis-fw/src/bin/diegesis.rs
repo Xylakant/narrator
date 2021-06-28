@@ -3,30 +3,27 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use diegesis_fw::saadc_src::SaadcSrc;
-use diegesis_fw::{groundhog_nrf52::GlobalRollingTimer, profiler, spim_src::SpimSrc, FillBuf};
-use diegesis_fw::InternalReport;
+use diegesis_fw::{
+    groundhog_nrf52::GlobalRollingTimer, profiler, saadc_src::SaadcSrc, spim_src::SpimSrc, FillBuf,
+    InternalReport,
+};
+use nrf52840_hal::{
+    clocks::{Clocks, ExternalOscillator, Internal, LfOscStopped},
+    gpio::{
+        p0::{Parts as P0Parts, P0_02, P0_03},
+        p1::Parts as P1Parts,
+        Disconnected, Input, Level, Output, Pin, PullUp, PushPull,
+    },
+    pac::{Interrupt, SPIM0, SPIM1, SPIM2, SPIM3},
+    ppi::{self, Ppi0},
+    spim::Frequency,
+    usbd::Usbd,
+};
 
 use bbqueue::{consts as bbconsts, BBBuffer, ConstBBBuffer};
 use embedded_hal::digital::v2::{InputPin, OutputPin};
 use groundhog::RollingTimer;
-use heapless::{
-    mpmc::MpMcQueue,
-    pool::singleton::Pool,
-};
-use nrf52840_hal::gpio::p0::{P0_02, P0_03};
-use nrf52840_hal::gpio::Disconnected;
-use nrf52840_hal::ppi;
-use nrf52840_hal::ppi::Ppi0;
-use nrf52840_hal::{
-    clocks::{Clocks, ExternalOscillator, Internal, LfOscStopped},
-    gpio::{
-        p0::Parts as P0Parts, p1::Parts as P1Parts, Input, Level, Output, Pin, PullUp, PushPull,
-    },
-    pac::{Interrupt, SPIM0, SPIM1, SPIM2, SPIM3},
-    spim::Frequency,
-    usbd::Usbd,
-};
+use heapless::{mpmc::MpMcQueue, pool::singleton::Pool};
 use postcard::to_rlercobs_writer;
 use rtic::app;
 use usb_device::{bus::UsbBusAllocator, class::UsbClass as _, device::UsbDeviceState, prelude::*};
@@ -43,7 +40,8 @@ pub mod allocs {
 }
 
 static ENCODED_QUEUE: BBBuffer<bbconsts::U65536> = BBBuffer(ConstBBBuffer::new());
-static POOL_QUEUE: MpMcQueue<InternalReport<allocs::DIGITAL_POOL, allocs::ANALOG_POOL>, 32> = MpMcQueue::new();
+static POOL_QUEUE: MpMcQueue<InternalReport<allocs::DIGITAL_POOL, allocs::ANALOG_POOL>, 32> =
+    MpMcQueue::new();
 static PROFILER: Profiler = Profiler::new();
 static FUSE: AtomicBool = AtomicBool::new(true);
 
@@ -102,7 +100,13 @@ const APP: () = {
         spim_p1: SpimSrc<SPIM1, allocs::DIGITAL_POOL, allocs::ANALOG_POOL, 32>,
         spim_p2: SpimSrc<SPIM2, allocs::DIGITAL_POOL, allocs::ANALOG_POOL, 32>,
         spim_p3: SpimSrc<SPIM3, allocs::DIGITAL_POOL, allocs::ANALOG_POOL, 32>,
-        saadc: SaadcSrc<(P0_02<Disconnected>, P0_03<Disconnected>), allocs::ANALOG_POOL, allocs::DIGITAL_POOL, Ppi0, 32>,
+        saadc: SaadcSrc<
+            (P0_02<Disconnected>, P0_03<Disconnected>),
+            allocs::ANALOG_POOL,
+            allocs::DIGITAL_POOL,
+            Ppi0,
+            32,
+        >,
         start_stop_btn: Pin<Input<PullUp>>,
         start_stop_led: Pin<Output<PushPull>>,
     }
