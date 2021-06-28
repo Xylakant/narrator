@@ -151,8 +151,6 @@ where
                     payload: Managed::Borrowed(casted_slice),
                 }
             }
-        };
-
-        todo!()
+        }
     }
 }
