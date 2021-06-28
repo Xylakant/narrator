@@ -1,7 +1,10 @@
-use nrf52840_hal::gpio::{
-    p0::{Parts as P0Parts, P0_02, P0_03, P0_29},
-    p1::Parts as P1Parts,
-    Pin, Disconnected,
+use nrf52840_hal::{
+    gpio::{
+        p0::{Parts as P0Parts, P0_02, P0_03, P0_29},
+        p1::Parts as P1Parts,
+        Pin, Disconnected, PullUp, PullDown, Input, Level,
+    },
+    prelude::InputPin,
 };
 
 pub enum Leds {
@@ -40,13 +43,26 @@ pub struct MappedPins {
 }
 
 pub trait PinMap {
+    type ButtonPin;
     fn map_pins(p0: P0Parts, p1: P1Parts) -> MappedPins;
+    fn into_button(pin: Pin<Disconnected>) -> Self::ButtonPin;
+    fn button_active(btn: &Self::ButtonPin) -> bool;
 }
 
 pub struct Nrf52Dk;
 pub struct AdafruitPlaygroundBluefruit;
 
 impl PinMap for Nrf52Dk {
+    type ButtonPin = Pin<Input<PullUp>>;
+
+    fn into_button(pin: Pin<Disconnected>) -> Self::ButtonPin {
+        pin.into_pullup_input()
+    }
+
+    fn button_active(btn: &Self::ButtonPin) -> bool {
+        btn.is_low().unwrap_or(false)
+    }
+
     fn map_pins(p0: P0Parts, p1: P1Parts) -> MappedPins {
         MappedPins {
             // SPIM data and clock (unused) pins
@@ -77,7 +93,20 @@ impl PinMap for Nrf52Dk {
 }
 
 impl PinMap for AdafruitPlaygroundBluefruit {
+    type ButtonPin = Pin<Input<PullDown>>;
+
+    fn into_button(pin: Pin<Disconnected>) -> Self::ButtonPin {
+        pin.into_pulldown_input()
+    }
+
+    fn button_active(btn: &Self::ButtonPin) -> bool {
+        btn.is_high().unwrap_or(false)
+    }
+
     fn map_pins(p0: P0Parts, p1: P1Parts) -> MappedPins {
+        // TODO: always disable the speaker so it doesn't make spooky noises
+        let _ = p1.p1_04.into_push_pull_output(Level::Low);
+
         MappedPins {
             // SPIM data and clock (unused) pins
             spim_p0_data: p0.p0_04.degrade(), // A4/SCL
