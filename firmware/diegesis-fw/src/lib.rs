@@ -2,9 +2,8 @@
 
 use core::{ops::DerefMut, sync::atomic::{AtomicUsize, Ordering}};
 
-use defmt_rtt as _;
+use defmt_rtt as _; // global logger
 use diegesis_icd::{DataReport, ReportKind, Managed};
-// global logger
 use kolben::rlercobs;
 use nrf52840_hal::{
     self as _, // memory layout
