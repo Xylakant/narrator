@@ -18,6 +18,7 @@ use heapless::mpmc::MpMcQueue;
 use crate::NopSlice;
 use crate::groundhog_nrf52::GlobalRollingTimer;
 use heapless::pool::Init;
+use crate::InternalReport;
 
 type PBox<POOL> = heapless::pool::singleton::Box<POOL, Init>;
 
@@ -86,35 +87,46 @@ const EXPECTED_TICKS: u32 = 65536;
 // (totally unscientific number)
 const ACCEPTABLE_DELTA: i32 = (EXPECTED_TICKS as i32) / 500;
 
-pub struct SpimSrc<T, POOL, const N: usize>
+use core::fmt::Debug;
+
+pub struct SpimSrc<T, POOL, OtherPool, const N: usize>
 where
     T: Instance + Shame + Send,
     POOL: heapless::pool::singleton::Pool + 'static,
-    PBox<POOL>: WriteBuffer<Word = u8>
+    OtherPool: heapless::pool::singleton::Pool + 'static,
+    PBox<POOL>: WriteBuffer<Word = u8>,
+    PBox<POOL>: Debug,
+    PBox<OtherPool>: Debug,
 {
     periph: SpimPeriph<T, POOL>,
-    pool_q: &'static MpMcQueue<PBox<POOL>, N>,
+    pool_q: &'static MpMcQueue<InternalReport<POOL, OtherPool>, N>,
     last_start: u32,
     timer: GlobalRollingTimer,
+    channel: u8,
 }
 
-impl<T, POOL, const N: usize> SpimSrc<T, POOL, N>
+impl<T, POOL, OtherPool, const N: usize> SpimSrc<T, POOL, OtherPool, N>
 where
     T: Instance + Shame + Send,
     POOL: heapless::pool::singleton::Pool + 'static,
+    OtherPool: heapless::pool::singleton::Pool + 'static,
     PBox<POOL>: WriteBuffer<Word = u8>,
     <POOL as heapless::pool::singleton::Pool>::Data: AsRef<[u8]>,
+    PBox<POOL>: Debug,
+    PBox<OtherPool>: Debug,
 {
     pub fn new(
         periph: SpimPeriph<T, POOL>,
-        pool_q: &'static MpMcQueue<PBox<POOL>, N>,
+        pool_q: &'static MpMcQueue<InternalReport<POOL, OtherPool>, N>,
         timer: GlobalRollingTimer,
+        channel: u8,
     ) -> Self {
         Self {
             periph,
             pool_q,
             last_start: 0,
             timer,
+            channel,
         }
     }
 
@@ -122,9 +134,10 @@ where
         periph: T,
         data_pin: Pin<DATA>,
         disc_pin: Pin<DISC>,
-        pool_q: &'static MpMcQueue<PBox<POOL>, N>,
+        pool_q: &'static MpMcQueue<InternalReport<POOL, OtherPool>, N>,
         freq: Frequency,
         timer: GlobalRollingTimer,
+        channel: u8,
     ) -> Self {
         let pins = Pins {
             sck: disc_pin.into_push_pull_output(Level::Low),
@@ -144,7 +157,7 @@ where
 
         let spim = Spim::new(periph, pins, freq, MODE_0, 0x00);
         let spim_p = SpimPeriph::Idle(spim);
-        SpimSrc::new(spim_p, pool_q, timer)
+        SpimSrc::new(spim_p, pool_q, timer, channel)
     }
 
     pub fn poll(&mut self, fuse: &AtomicBool) {
@@ -195,7 +208,15 @@ where
                         defmt::warn!("spi deviation: {}", delta);
                     }
 
-                    if let Ok(()) = self.pool_q.enqueue(rxb) {
+                    let rpt = InternalReport {
+                        timestamp: 0x01020304,
+                        kind: crate::InternalReportKind::DigitalReport {
+                            channel: self.channel,
+                            payload: rxb,
+                        },
+                    };
+
+                    if let Ok(()) = self.pool_q.enqueue(rpt) {
                         // defmt::info!("Sent box!");
                     } else {
                         defmt::warn!("Failed to send box!");
@@ -244,7 +265,15 @@ where
                     (&*T::shame_ptr()).shorts.modify(|_r, w| { w.end_start().clear_bit() });
                 }
 
-                if let Ok(()) = self.pool_q.enqueue(rxb) {
+                let rpt = InternalReport {
+                    timestamp: 0x01020304,
+                    kind: crate::InternalReportKind::DigitalReport {
+                        channel: self.channel,
+                        payload: rxb,
+                    },
+                };
+
+                if let Ok(()) = self.pool_q.enqueue(rpt) {
                     // defmt::info!("Sent box!");
                 } else {
                     defmt::warn!("Failed to send box!");

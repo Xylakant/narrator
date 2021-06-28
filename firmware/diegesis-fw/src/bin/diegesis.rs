@@ -1,21 +1,18 @@
 #![no_main]
 #![no_std]
 
-use core::ops::DerefMut;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use diegesis_fw::saadc_src::SaadcSrc;
 use diegesis_fw::{groundhog_nrf52::GlobalRollingTimer, profiler, spim_src::SpimSrc, FillBuf};
-use diegesis_icd::{DataReport, Managed};
+use diegesis_fw::InternalReport;
 
 use bbqueue::{consts as bbconsts, BBBuffer, ConstBBBuffer};
 use embedded_hal::digital::v2::{InputPin, OutputPin};
 use groundhog::RollingTimer;
 use heapless::{
     mpmc::MpMcQueue,
-    pool,
-    pool::singleton::{Box, Pool},
-    pool::Init,
+    pool::singleton::Pool,
 };
 use nrf52840_hal::gpio::p0::{P0_02, P0_03};
 use nrf52840_hal::gpio::Disconnected;
@@ -38,10 +35,15 @@ use usbd_serial::{SerialPort, USB_CLASS_CDC};
 type UsbDevice<'a> = usb_device::device::UsbDevice<'static, Usbd<'a>>;
 type UsbSerial<'a> = SerialPort<'static, Usbd<'a>>;
 
-pool!(A: [u8; 4096]);
+#[allow(non_camel_case_types)]
+pub mod allocs {
+    use heapless::pool;
+    pool!(DIGITAL_POOL: [u8; 4096]);
+    pool!(ANALOG_POOL: [i16; 2048]);
+}
 
 static ENCODED_QUEUE: BBBuffer<bbconsts::U65536> = BBBuffer(ConstBBBuffer::new());
-static POOL_QUEUE: MpMcQueue<Box<A, Init>, 32> = MpMcQueue::new();
+static POOL_QUEUE: MpMcQueue<InternalReport<allocs::DIGITAL_POOL, allocs::ANALOG_POOL>, 32> = MpMcQueue::new();
 static PROFILER: Profiler = Profiler::new();
 static FUSE: AtomicBool = AtomicBool::new(true);
 
@@ -96,11 +98,11 @@ const APP: () = {
     struct Resources {
         usb_dev: UsbDevice<'static>,
         serial: UsbSerial<'static>,
-        spim_p0: SpimSrc<SPIM0, A, 32>,
-        spim_p1: SpimSrc<SPIM1, A, 32>,
-        spim_p2: SpimSrc<SPIM2, A, 32>,
-        spim_p3: SpimSrc<SPIM3, A, 32>,
-        saadc: SaadcSrc<(P0_02<Disconnected>, P0_03<Disconnected>), A, Ppi0, 32>,
+        spim_p0: SpimSrc<SPIM0, allocs::DIGITAL_POOL, allocs::ANALOG_POOL, 32>,
+        spim_p1: SpimSrc<SPIM1, allocs::DIGITAL_POOL, allocs::ANALOG_POOL, 32>,
+        spim_p2: SpimSrc<SPIM2, allocs::DIGITAL_POOL, allocs::ANALOG_POOL, 32>,
+        spim_p3: SpimSrc<SPIM3, allocs::DIGITAL_POOL, allocs::ANALOG_POOL, 32>,
+        saadc: SaadcSrc<(P0_02<Disconnected>, P0_03<Disconnected>), allocs::ANALOG_POOL, allocs::DIGITAL_POOL, Ppi0, 32>,
         start_stop_btn: Pin<Input<PullUp>>,
         start_stop_led: Pin<Output<PushPull>>,
     }
@@ -109,7 +111,8 @@ const APP: () = {
     fn init(ctx: init::Context) -> init::LateResources {
         static mut CLOCKS: Option<Clocks<ExternalOscillator, Internal, LfOscStopped>> = None;
         static mut USB_BUS: Option<UsbBusAllocator<Usbd<'static>>> = None;
-        static mut DATA_POOL: [u8; 32 * 4096] = [0u8; 32 * 4096];
+        static mut DATA_POOL_A: [u8; 16 * 4096] = [0u8; 16 * 4096];
+        static mut DATA_POOL_B: [u8; 16 * 4096] = [0u8; 16 * 4096];
 
         // Enable instruction caches for MAXIMUM SPEED
         let board = ctx.device;
@@ -119,7 +122,8 @@ const APP: () = {
         // NOTE: nrf52840 has a total of 256KiB of RAM.
         // We are allocating 128 KiB, or 32 data blocks, using
         // heapless pool.
-        A::grow(DATA_POOL);
+        allocs::DIGITAL_POOL::grow(DATA_POOL_A);
+        allocs::ANALOG_POOL::grow(DATA_POOL_B);
 
         defmt::info!("Hello, world!");
 
@@ -155,6 +159,7 @@ const APP: () = {
             &POOL_QUEUE,
             Frequency::M2,
             GlobalRollingTimer,
+            0,
         );
 
         let spim1 = SpimSrc::from_parts(
@@ -164,6 +169,7 @@ const APP: () = {
             &POOL_QUEUE,
             Frequency::M2,
             GlobalRollingTimer,
+            1,
         );
 
         let spim2 = SpimSrc::from_parts(
@@ -173,6 +179,7 @@ const APP: () = {
             &POOL_QUEUE,
             Frequency::M2,
             GlobalRollingTimer,
+            2,
         );
 
         let spim3 = SpimSrc::from_parts(
@@ -182,6 +189,7 @@ const APP: () = {
             &POOL_QUEUE,
             Frequency::M2,
             GlobalRollingTimer,
+            3,
         );
 
         let ppi = ppi::Parts::new(board.PPI);
@@ -363,15 +371,12 @@ const APP: () = {
             // end up wasting 0 <= n < 5KiB at the end of the ring, which is a
             // whole pbox worth (7.8% of 64K capacity)
             if let Ok(wgr) = enc_prod.grant_exact(1024 + 4096) {
-                if let Some(mut new_box) = POOL_QUEUE.dequeue() {
+                if let Some(mut new_rpt) = POOL_QUEUE.dequeue() {
                     PROFILER.report_sers();
                     let fbuf = to_rlercobs_writer(
                         // TODO(AJM): We should be sending DataReports through the queue,
                         // not just boxes, so the senders can generate the metadata
-                        &DataReport {
-                            timestamp: 0x01020304,
-                            payload: Managed::Borrowed(new_box.deref_mut()),
-                        },
+                        &new_rpt.as_data_report(),
                         FillBuf { buf: wgr, used: 0 },
                     )
                     .unwrap();
