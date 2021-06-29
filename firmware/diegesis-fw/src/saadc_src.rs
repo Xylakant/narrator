@@ -8,10 +8,14 @@ use crate::{
     saadc::{AsyncConversion, AsyncPendingConversion, Channels, Saadc, SaadcConfig},
     InternalReport,
 };
+use cortex_m::prelude::_embedded_hal_timer_CountDown;
+use embedded_hal::timer::Cancel;
 use nrf52840_hal::{
     pac::SAADC,
     ppi::ConfigurablePpi,
     saadc::{Oversample, Time},
+    timer::{self, Periodic},
+    Timer,
 };
 
 use embedded_dma::StaticWriteBuffer;
@@ -49,7 +53,7 @@ impl<B, C> State<B, C> {
     }
 }
 
-pub struct SaadcSrc<C, AnalogPool, DigitalPool, PPI, const N: usize>
+pub struct SaadcSrc<C, T, AnalogPool, DigitalPool, PPI, PPI2, const N: usize>
 where
     AnalogPool: Pool + 'static,
     DigitalPool: Pool + 'static,
@@ -61,9 +65,14 @@ where
     last_start: u32,
     bitflag: u8,
     ppi: PPI,
+    #[allow(dead_code)]
+    ppi2: PPI2,
+    sample_timer: Timer<T, Periodic>,
+    sample_period: u32,
 }
 
-impl<C, AnalogPool, DigitalPool, PPI, const N: usize> SaadcSrc<C, AnalogPool, DigitalPool, PPI, N>
+impl<C, T, AnalogPool, DigitalPool, PPI, PPI2, const N: usize>
+    SaadcSrc<C, T, AnalogPool, DigitalPool, PPI, PPI2, N>
 where
     Box<AnalogPool>: StaticWriteBuffer<Word = i16>,
     AnalogPool: Pool<Data = [i16; 2048]> + 'static,
@@ -71,12 +80,16 @@ where
     PBox<AnalogPool>: Debug,
     PBox<DigitalPool>: Debug,
     PPI: ConfigurablePpi,
+    PPI2: ConfigurablePpi,
     C: Channels,
+    T: timer::Instance,
 {
     pub fn new(
         peripheral: SAADC,
+        timer: T,
         channels: C,
         mut ppi: PPI,
+        mut ppi2: PPI2,
         queue: &'static MpMcQueue<InternalReport<DigitalPool, AnalogPool>, N>,
     ) -> Self {
         peripheral
@@ -98,12 +111,22 @@ where
         ppi.set_event_endpoint(saadc.event_end());
         ppi.set_task_endpoint(saadc.task_start());
 
+        let sample_timer = Timer::periodic(timer);
+
+        ppi2.set_event_endpoint(sample_timer.event_compare_cc0());
+        ppi2.set_task_endpoint(saadc.task_sample());
+        ppi2.enable();
+
         Self {
             state: State::Idle(saadc, channels),
             pool_q: queue,
             last_start: 0,
             ppi,
+            ppi2,
             bitflag,
+            sample_timer,
+            // 200 kHz -> 5 µs sample interval
+            sample_period: 5,
         }
     }
 
@@ -124,6 +147,7 @@ where
                     let pbox = pbox.init([0; 2048]);
                     let pend = p.start_async_conversion(c, pbox);
                     self.last_start = GlobalRollingTimer.get_ticks();
+                    self.sample_timer.start(self.sample_period);
                     State::OnePending(pend)
                 } else {
                     // No data available! Blow the fuse.
@@ -162,6 +186,8 @@ where
                     } else {
                         defmt::warn!("Failed to send box!");
                     }
+
+                    self.sample_timer.cancel().unwrap();
                     State::Idle(p, c)
                 } else {
                     // Not ready yet
