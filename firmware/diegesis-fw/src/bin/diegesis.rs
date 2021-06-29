@@ -418,48 +418,48 @@ const APP: () = {
             // for a more efficient use of the encoding buffer. For now, we may
             // end up wasting 0 <= n < 5KiB at the end of the ring, which is a
             // whole pbox worth (7.8% of 64K capacity)
-            let start_encoding_ticks = timer.get_ticks();
-            if let Ok(wgr) = enc_prod.grant_exact(1024 + 4096) {
-                if let Some(mut new_rpt) = POOL_QUEUE.dequeue() {
-                    PROFILER.report_sers();
-                    let fbuf = to_rlercobs_writer(
-                        // TODO(AJM): We should be sending DataReports through the queue,
-                        // not just boxes, so the senders can generate the metadata
-                        &new_rpt.as_data_report(),
-                        FillBuf { buf: wgr, used: 0 },
-                    )
-                    .unwrap();
-                    let len = fbuf.content_len();
-                    fbuf.buf.commit(len);
-                    PROFILER
-                        .bbq_push_bytes
-                        .fetch_add(len as u32, Ordering::SeqCst);
-                }
-            };
-            PROFILER.ticks_encoding.fetch_add(timer.ticks_since(start_encoding_ticks), Ordering::SeqCst);
+            time_ticks!(PROFILER.ticks_encoding, {
+                if let Ok(wgr) = enc_prod.grant_exact(1024 + 4096) {
+                    if let Some(mut new_rpt) = POOL_QUEUE.dequeue() {
+                        PROFILER.report_sers();
+                        let fbuf = to_rlercobs_writer(
+                            // TODO(AJM): We should be sending DataReports through the queue,
+                            // not just boxes, so the senders can generate the metadata
+                            &new_rpt.as_data_report(),
+                            FillBuf { buf: wgr, used: 0 },
+                        )
+                        .unwrap();
+                        let len = fbuf.content_len();
+                        fbuf.buf.commit(len);
+                        PROFILER
+                            .bbq_push_bytes
+                            .fetch_add(len as u32, Ordering::SeqCst);
+                    }
+                };
+            });
 
             // Second: Drain bytes into the serial port in order to
             // free up space to encode more.
-            let start_draining_ticks = timer.get_ticks();
-            if let Ok(rgr) = enc_cons.read() {
-                match serial.write(&rgr) {
-                    Ok(n) => {
-                        PROFILER.usb_writes();
-                        PROFILER
-                            .bbq_pull_bytes
-                            .fetch_add(n as u32, Ordering::SeqCst);
-                        rgr.release(n);
-                    }
-                    Err(UsbError::WouldBlock) => {
-                        rgr.release(0);
-                    }
-                    Err(e) => {
-                        rgr.release(0);
-                        panic!("BAD USB WRITE - {:?}", e);
+            time_ticks!(PROFILER.ticks_draining, {
+                if let Ok(rgr) = enc_cons.read() {
+                    match serial.write(&rgr) {
+                        Ok(n) => {
+                            PROFILER.usb_writes();
+                            PROFILER
+                                .bbq_pull_bytes
+                                .fetch_add(n as u32, Ordering::SeqCst);
+                            rgr.release(n);
+                        }
+                        Err(UsbError::WouldBlock) => {
+                            rgr.release(0);
+                        }
+                        Err(e) => {
+                            rgr.release(0);
+                            panic!("BAD USB WRITE - {:?}", e);
+                        }
                     }
                 }
-            }
-            PROFILER.ticks_draining.fetch_add(timer.ticks_since(start_draining_ticks), Ordering::SeqCst);
+            });
         }
     }
 };
