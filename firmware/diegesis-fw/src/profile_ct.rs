@@ -1,4 +1,17 @@
 #[macro_export]
+macro_rules! time_ticks {
+    ($atomic_tick:expr, $body:expr) => {
+        let timer = $crate::groundhog_nrf52::GlobalRollingTimer::new();
+        let start = timer.get_ticks();
+        let ret = {
+            $body
+        };
+        $atomic_tick.fetch_add(start, core::sync::atomic::Ordering::SeqCst);
+        ret
+    };
+}
+
+#[macro_export]
 macro_rules! profiler {
     ($instance_ty:ident { $($ctr:ident),+ } => $report_ty:ident) => (
 

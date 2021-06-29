@@ -3,10 +3,7 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use diegesis_fw::{
-    groundhog_nrf52::GlobalRollingTimer, profiler, saadc_src::SaadcSrc, spim_src::SpimSrc, FillBuf,
-    InternalReport, Board, pinmap::{PinMap, Leds},
-};
+use diegesis_fw::{Board, FillBuf, InternalReport, groundhog_nrf52::GlobalRollingTimer, pinmap::{PinMap, Leds}, profiler, saadc_src::SaadcSrc, spim_src::SpimSrc, time_ticks};
 use nrf52840_hal::{
     clocks::{Clocks, ExternalOscillator, Internal, LfOscStopped},
     gpio::{
@@ -53,6 +50,7 @@ profiler!(Profiler {
     saadc_ints,
     usb_writes,
     report_sers,
+    encoded_in_bytes,
     bbq_push_bytes,
     bbq_pull_bytes,
     idle_loop_iters,
@@ -258,47 +256,42 @@ const APP: () = {
 
     #[task(binds = SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0, resources = [spim_p0])]
     fn spim_p0(c: spim_p0::Context) {
-        let timer = GlobalRollingTimer::new();
-        let start = timer.get_ticks();
         PROFILER.spim_p0_ints();
-        c.resources.spim_p0.poll(&FUSE);
-        PROFILER.ticks_spimp0.fetch_add(timer.ticks_since(start), Ordering::SeqCst);
+        time_ticks!(PROFILER.ticks_spimp0, {
+            c.resources.spim_p0.poll(&FUSE);
+        });
     }
 
     #[task(binds = SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1, resources = [spim_p1])]
     fn spim_p1(c: spim_p1::Context) {
-        let timer = GlobalRollingTimer::new();
-        let start = timer.get_ticks();
         PROFILER.spim_p1_ints();
-        c.resources.spim_p1.poll(&FUSE);
-        PROFILER.ticks_spimp1.fetch_add(timer.ticks_since(start), Ordering::SeqCst);
+        time_ticks!(PROFILER.ticks_spimp1, {
+            c.resources.spim_p1.poll(&FUSE);
+        });
     }
 
     #[task(binds = SPIM2_SPIS2_SPI2, resources = [spim_p2])]
     fn spim_p2(c: spim_p2::Context) {
-        let timer = GlobalRollingTimer::new();
-        let start = timer.get_ticks();
         PROFILER.spim_p2_ints();
-        c.resources.spim_p2.poll(&FUSE);
-        PROFILER.ticks_spimp2.fetch_add(timer.ticks_since(start), Ordering::SeqCst);
+        time_ticks!(PROFILER.ticks_spimp2, {
+            c.resources.spim_p2.poll(&FUSE);
+        });
     }
 
     #[task(binds = SPIM3, resources = [spim_p3])]
     fn spim_p3(c: spim_p3::Context) {
-        let timer = GlobalRollingTimer::new();
-        let start = timer.get_ticks();
         PROFILER.spim_p3_ints();
-        c.resources.spim_p3.poll(&FUSE);
-        PROFILER.ticks_spimp3.fetch_add(timer.ticks_since(start), Ordering::SeqCst);
+        time_ticks!(PROFILER.ticks_spimp3, {
+            c.resources.spim_p3.poll(&FUSE);
+        });
     }
 
     #[task(binds = SAADC, resources = [saadc])]
     fn saadc(c: saadc::Context) {
-        let timer = GlobalRollingTimer::new();
-        let start = timer.get_ticks();
         PROFILER.saadc_ints();
-        c.resources.saadc.poll(&FUSE);
-        PROFILER.ticks_saadc.fetch_add(timer.ticks_since(start), Ordering::SeqCst);
+        time_ticks!(PROFILER.ticks_saadc, {
+            c.resources.saadc.poll(&FUSE);
+        });
     }
 
     #[idle(resources = [usb_dev, serial, start_stop_btn, start_stop_led])]
@@ -341,9 +334,9 @@ const APP: () = {
             // TODO: In the current version of nrf-usb, we need to poll the USB once
             // per write. This is why the following code is round-robin. In the future,
             // when a fix for this is available, we may re-consider true round-robin.
-            let start_usb_ticks = timer.get_ticks();
-            usb_poll(usb_d, serial);
-            PROFILER.ticks_usb.fetch_add(timer.ticks_since(start_usb_ticks), Ordering::SeqCst);
+            time_ticks!(PROFILER.ticks_usb, {
+                usb_poll(usb_d, serial);
+            });
 
             if state != UsbDeviceState::Configured {
                 continue;
@@ -352,72 +345,72 @@ const APP: () = {
             /////////////////////////////////////////////////////////
             // FUSES, START, AND STOP
             /////////////////////////////////////////////////////////
-            let start_misc_ticks = timer.get_ticks();
-            let is_active = Board::button_active(c.resources.start_stop_btn);
-            if let Some(Level::Low) = button.poll(is_active) {
-                if running {
-                    // Stopping by blowing the fuse
-                    defmt::info!("Stopping!");
-                    FUSE.store(true, Ordering::SeqCst);
+            time_ticks!(PROFILER.ticks_misc, {
+                let is_active = Board::button_active(c.resources.start_stop_btn);
+                if let Some(Level::Low) = button.poll(is_active) {
+                    if running {
+                        // Stopping by blowing the fuse
+                        defmt::info!("Stopping!");
+                        FUSE.store(true, Ordering::SeqCst);
+                        if let Some(led) = c.resources.start_stop_led.as_mut() {
+                            led.set_high().ok();
+                        }
+                        running = false;
+                    } else if fuse_timeout.is_some() {
+                        // TODO: start after the fuse is cleared?
+                        defmt::info!("Not starting, waiting for fuse!");
+                    } else {
+                        defmt::info!("Starting!");
+                        FUSE.store(false, Ordering::SeqCst);
+                        rtic::pend(Interrupt::SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
+                        rtic::pend(Interrupt::SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1);
+                        rtic::pend(Interrupt::SPIM2_SPIS2_SPI2);
+                        rtic::pend(Interrupt::SPIM3);
+                        // rtic::pend(Interrupt::SAADC);
+
+                        if let Some(led) = c.resources.start_stop_led.as_mut() {
+                            led.set_low().ok();
+                        }
+                        running = true;
+                    }
+                }
+
+                if let Some(tick) = fuse_timeout.take() {
+                    if timer.millis_since(tick) > 2500 {
+                        defmt::info!("Fuse restored! Cleared");
+                        // NOTE: DON'T auto-clear the fuse! wait for an explicit run command
+                    } else {
+                        // Still cooling...
+                        fuse_timeout = Some(tick);
+                    }
+                }
+
+                if running && fuse_timeout.is_none() && FUSE.load(Ordering::SeqCst) {
+                    defmt::info!("Fuse blown! Cooling down...");
                     if let Some(led) = c.resources.start_stop_led.as_mut() {
                         led.set_high().ok();
                     }
+                    fuse_timeout = Some(timer.get_ticks());
                     running = false;
-                } else if fuse_timeout.is_some() {
-                    // TODO: start after the fuse is cleared?
-                    defmt::info!("Not starting, waiting for fuse!");
-                } else {
-                    defmt::info!("Starting!");
-                    FUSE.store(false, Ordering::SeqCst);
-                    rtic::pend(Interrupt::SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
-                    rtic::pend(Interrupt::SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1);
-                    rtic::pend(Interrupt::SPIM2_SPIS2_SPI2);
-                    rtic::pend(Interrupt::SPIM3);
-                    // rtic::pend(Interrupt::SAADC);
-
-                    if let Some(led) = c.resources.start_stop_led.as_mut() {
-                        led.set_low().ok();
-                    }
-                    running = true;
                 }
-            }
 
-            if let Some(tick) = fuse_timeout.take() {
-                if timer.millis_since(tick) > 2500 {
-                    defmt::info!("Fuse restored! Cleared");
-                    // NOTE: DON'T auto-clear the fuse! wait for an explicit run command
-                } else {
-                    // Still cooling...
-                    fuse_timeout = Some(tick);
+                if timer.millis_since(last_profile) >= 1000 {
+                    let rpt = PROFILER.clear_and_report();
+                    defmt::info!("{}", rpt);
+
+                    last_profile = timer.get_ticks();
+
+                    defmt::info!(
+                        "min: {}, max: {}, avg: {}",
+                        min_ticks,
+                        max_ticks,
+                        (4_000_000 / rpt.idle_loop_iters),
+                    );
+
+                    min_ticks = 0xFFFFFFFF;
+                    max_ticks = 0x00000000;
                 }
-            }
-
-            if running && fuse_timeout.is_none() && FUSE.load(Ordering::SeqCst) {
-                defmt::info!("Fuse blown! Cooling down...");
-                if let Some(led) = c.resources.start_stop_led.as_mut() {
-                    led.set_high().ok();
-                }
-                fuse_timeout = Some(timer.get_ticks());
-                running = false;
-            }
-
-            if timer.millis_since(last_profile) >= 1000 {
-                let rpt = PROFILER.clear_and_report();
-                defmt::info!("{}", rpt);
-
-                last_profile = timer.get_ticks();
-
-                defmt::info!(
-                    "min: {}, max: {}, avg: {}",
-                    min_ticks,
-                    max_ticks,
-                    (4_000_000 / rpt.idle_loop_iters),
-                );
-
-                min_ticks = 0xFFFFFFFF;
-                max_ticks = 0x00000000;
-            }
-            PROFILER.ticks_misc.fetch_add(timer.ticks_since(start_misc_ticks), Ordering::SeqCst);
+            });
 
             // TODO: read?
 
