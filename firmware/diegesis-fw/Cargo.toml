@@ -70,8 +70,8 @@ default = [
   # "dependency-a/defmt-trace",
 
   # TODO: Change when everyone has a playground board
-  "board-dk"
-  # "board-playground"
+  # "board-dk"
+  "board-playground"
 ]
 
 board-dk = []

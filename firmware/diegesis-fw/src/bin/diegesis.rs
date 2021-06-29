@@ -39,7 +39,7 @@ pub mod allocs {
     pool!(ANALOG_POOL: [i16; 2048]);
 }
 
-static ENCODED_QUEUE: BBBuffer<bbconsts::U65536> = BBBuffer(ConstBBBuffer::new());
+static ENCODED_QUEUE: BBBuffer<bbconsts::U32768> = BBBuffer(ConstBBBuffer::new());
 static POOL_QUEUE: MpMcQueue<InternalReport<allocs::DIGITAL_POOL, allocs::ANALOG_POOL>, 32> =
     MpMcQueue::new();
 static PROFILER: Profiler = Profiler::new();
@@ -55,7 +55,19 @@ profiler!(Profiler {
     report_sers,
     bbq_push_bytes,
     bbq_pull_bytes,
-    idle_loop_iters
+    idle_loop_iters,
+
+    ticks_usb,
+    ticks_misc,
+    ticks_encoding,
+    ticks_draining,
+
+    ticks_spimp0,
+    ticks_spimp1,
+    ticks_spimp2,
+    ticks_spimp3,
+
+    ticks_saadc
 } => ProfilerRpt);
 
 // TODO: Replace with "Active" and "Inactive" instead of High/Low
@@ -118,7 +130,7 @@ const APP: () = {
     fn init(ctx: init::Context) -> init::LateResources {
         static mut CLOCKS: Option<Clocks<ExternalOscillator, Internal, LfOscStopped>> = None;
         static mut USB_BUS: Option<UsbBusAllocator<Usbd<'static>>> = None;
-        static mut DATA_POOL_A: [u8; 16 * 4096] = [0u8; 16 * 4096];
+        static mut DATA_POOL_A: [u8; 24 * 4096] = [0u8; 24 * 4096];
         static mut DATA_POOL_B: [u8; 16 * 4096] = [0u8; 16 * 4096];
 
         // Enable instruction caches for MAXIMUM SPEED
@@ -126,9 +138,7 @@ const APP: () = {
         board.NVMC.icachecnf.write(|w| w.cacheen().set_bit());
         cortex_m::asm::isb();
 
-        // NOTE: nrf52840 has a total of 256KiB of RAM.
-        // We are allocating 128 KiB, or 32 data blocks, using
-        // heapless pool.
+        // NOTE: UPDATE WITH CORRECT PAGE COUNTS
         allocs::DIGITAL_POOL::grow(DATA_POOL_A);
         allocs::ANALOG_POOL::grow(DATA_POOL_B);
 
@@ -248,32 +258,47 @@ const APP: () = {
 
     #[task(binds = SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0, resources = [spim_p0])]
     fn spim_p0(c: spim_p0::Context) {
+        let timer = GlobalRollingTimer::new();
+        let start = timer.get_ticks();
         PROFILER.spim_p0_ints();
         c.resources.spim_p0.poll(&FUSE);
+        PROFILER.ticks_spimp0.fetch_add(timer.ticks_since(start), Ordering::SeqCst);
     }
 
     #[task(binds = SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1, resources = [spim_p1])]
     fn spim_p1(c: spim_p1::Context) {
+        let timer = GlobalRollingTimer::new();
+        let start = timer.get_ticks();
         PROFILER.spim_p1_ints();
         c.resources.spim_p1.poll(&FUSE);
+        PROFILER.ticks_spimp1.fetch_add(timer.ticks_since(start), Ordering::SeqCst);
     }
 
     #[task(binds = SPIM2_SPIS2_SPI2, resources = [spim_p2])]
     fn spim_p2(c: spim_p2::Context) {
+        let timer = GlobalRollingTimer::new();
+        let start = timer.get_ticks();
         PROFILER.spim_p2_ints();
         c.resources.spim_p2.poll(&FUSE);
+        PROFILER.ticks_spimp2.fetch_add(timer.ticks_since(start), Ordering::SeqCst);
     }
 
     #[task(binds = SPIM3, resources = [spim_p3])]
     fn spim_p3(c: spim_p3::Context) {
+        let timer = GlobalRollingTimer::new();
+        let start = timer.get_ticks();
         PROFILER.spim_p3_ints();
         c.resources.spim_p3.poll(&FUSE);
+        PROFILER.ticks_spimp3.fetch_add(timer.ticks_since(start), Ordering::SeqCst);
     }
 
     #[task(binds = SAADC, resources = [saadc])]
     fn saadc(c: saadc::Context) {
+        let timer = GlobalRollingTimer::new();
+        let start = timer.get_ticks();
         PROFILER.saadc_ints();
         c.resources.saadc.poll(&FUSE);
+        PROFILER.ticks_saadc.fetch_add(timer.ticks_since(start), Ordering::SeqCst);
     }
 
     #[idle(resources = [usb_dev, serial, start_stop_btn, start_stop_led])]
@@ -316,7 +341,9 @@ const APP: () = {
             // TODO: In the current version of nrf-usb, we need to poll the USB once
             // per write. This is why the following code is round-robin. In the future,
             // when a fix for this is available, we may re-consider true round-robin.
+            let start_usb_ticks = timer.get_ticks();
             usb_poll(usb_d, serial);
+            PROFILER.ticks_usb.fetch_add(timer.ticks_since(start_usb_ticks), Ordering::SeqCst);
 
             if state != UsbDeviceState::Configured {
                 continue;
@@ -325,6 +352,7 @@ const APP: () = {
             /////////////////////////////////////////////////////////
             // FUSES, START, AND STOP
             /////////////////////////////////////////////////////////
+            let start_misc_ticks = timer.get_ticks();
             let is_active = Board::button_active(c.resources.start_stop_btn);
             if let Some(Level::Low) = button.poll(is_active) {
                 if running {
@@ -345,7 +373,7 @@ const APP: () = {
                     rtic::pend(Interrupt::SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1);
                     rtic::pend(Interrupt::SPIM2_SPIS2_SPI2);
                     rtic::pend(Interrupt::SPIM3);
-                    rtic::pend(Interrupt::SAADC);
+                    // rtic::pend(Interrupt::SAADC);
 
                     if let Some(led) = c.resources.start_stop_led.as_mut() {
                         led.set_low().ok();
@@ -389,6 +417,7 @@ const APP: () = {
                 min_ticks = 0xFFFFFFFF;
                 max_ticks = 0x00000000;
             }
+            PROFILER.ticks_misc.fetch_add(timer.ticks_since(start_misc_ticks), Ordering::SeqCst);
 
             // TODO: read?
 
@@ -396,6 +425,7 @@ const APP: () = {
             // for a more efficient use of the encoding buffer. For now, we may
             // end up wasting 0 <= n < 5KiB at the end of the ring, which is a
             // whole pbox worth (7.8% of 64K capacity)
+            let start_encoding_ticks = timer.get_ticks();
             if let Ok(wgr) = enc_prod.grant_exact(1024 + 4096) {
                 if let Some(mut new_rpt) = POOL_QUEUE.dequeue() {
                     PROFILER.report_sers();
@@ -413,9 +443,11 @@ const APP: () = {
                         .fetch_add(len as u32, Ordering::SeqCst);
                 }
             };
+            PROFILER.ticks_encoding.fetch_add(timer.ticks_since(start_encoding_ticks), Ordering::SeqCst);
 
             // Second: Drain bytes into the serial port in order to
             // free up space to encode more.
+            let start_draining_ticks = timer.get_ticks();
             if let Ok(rgr) = enc_cons.read() {
                 match serial.write(&rgr) {
                     Ok(n) => {
@@ -434,6 +466,7 @@ const APP: () = {
                     }
                 }
             }
+            PROFILER.ticks_draining.fetch_add(timer.ticks_since(start_draining_ticks), Ordering::SeqCst);
         }
     }
 };

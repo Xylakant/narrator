@@ -173,6 +173,7 @@ where
                     SpimPeriph::OnePending(txfr)
                 } else {
                     // No data available! Blow the fuse.
+                    defmt::error!("SPIM: Blowing fuse idle-to-one transition");
                     fuse.store(true, Ordering::SeqCst);
                     SpimPeriph::Idle(p)
                 }
@@ -240,6 +241,7 @@ where
                     }
                 } else {
                     // No data available! Blow the fuse.
+                    defmt::error!("SPIM: Blowing fuse one-to-two transition");
                     fuse.store(true, Ordering::SeqCst);
                     SpimPeriph::OnePending(ts)
                 }
