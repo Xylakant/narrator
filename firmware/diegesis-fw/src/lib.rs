@@ -19,11 +19,18 @@ use heapless::pool::singleton::Pool;
 use kolben::rlercobs;
 use panic_probe as _;
 
+#[cfg(feature = "board-dk")]
+pub use pinmap::Nrf52Dk as Board;
+
+#[cfg(feature = "board-playground")]
+pub use pinmap::AdafruitPlaygroundBluefruit as Board;
+
 pub mod groundhog_nrf52;
 pub mod patterns;
 mod saadc;
 pub mod saadc_src;
 pub mod spim_src;
+pub mod pinmap;
 
 #[macro_use]
 pub mod profile_ct;

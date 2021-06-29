@@ -5,14 +5,14 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use diegesis_fw::{
     groundhog_nrf52::GlobalRollingTimer, profiler, saadc_src::SaadcSrc, spim_src::SpimSrc, FillBuf,
-    InternalReport,
+    InternalReport, Board, pinmap::{PinMap, Leds},
 };
 use nrf52840_hal::{
     clocks::{Clocks, ExternalOscillator, Internal, LfOscStopped},
     gpio::{
-        p0::{Parts as P0Parts, P0_02, P0_03},
+        p0::{Parts as P0Parts, P0_02, P0_03, P0_29},
         p1::Parts as P1Parts,
-        Disconnected, Input, Level, Output, Pin, PullUp, PushPull,
+        Disconnected, Level, Output, Pin, PushPull,
     },
     pac::{Interrupt, SPIM0, SPIM1, SPIM2, SPIM3, TIMER1},
     ppi::{self, Ppi0, Ppi1},
@@ -21,7 +21,7 @@ use nrf52840_hal::{
 };
 
 use bbqueue::{consts as bbconsts, BBBuffer, ConstBBBuffer};
-use embedded_hal::digital::v2::{InputPin, OutputPin};
+use embedded_hal::digital::v2::OutputPin;
 use groundhog::RollingTimer;
 use heapless::{mpmc::MpMcQueue, pool::singleton::Pool};
 use postcard::to_rlercobs_writer;
@@ -58,6 +58,7 @@ profiler!(Profiler {
     idle_loop_iters
 } => ProfilerRpt);
 
+// TODO: Replace with "Active" and "Inactive" instead of High/Low
 #[derive(Clone, Copy, Debug)]
 enum ButtonDebounce {
     StableLow,
@@ -101,7 +102,7 @@ const APP: () = {
         spim_p2: SpimSrc<SPIM2, allocs::DIGITAL_POOL, allocs::ANALOG_POOL, 32>,
         spim_p3: SpimSrc<SPIM3, allocs::DIGITAL_POOL, allocs::ANALOG_POOL, 32>,
         saadc: SaadcSrc<
-            (P0_02<Disconnected>, P0_03<Disconnected>),
+            (P0_02<Disconnected>, P0_03<Disconnected>, P0_29<Disconnected>),
             TIMER1,
             allocs::ANALOG_POOL,
             allocs::DIGITAL_POOL,
@@ -109,8 +110,8 @@ const APP: () = {
             Ppi1,
             32,
         >,
-        start_stop_btn: Pin<Input<PullUp>>,
-        start_stop_led: Pin<Output<PushPull>>,
+        start_stop_btn: <Board as PinMap>::ButtonPin,
+        start_stop_led: Option<Pin<Output<PushPull>>>,
     }
 
     #[init]
@@ -155,13 +156,15 @@ const APP: () = {
 
         GlobalRollingTimer::init(board.TIMER0);
         let usbd = board.USBD;
+
         let gpios_p0 = P0Parts::new(board.P0);
         let gpios_p1 = P1Parts::new(board.P1);
+        let pins = Board::map_pins(gpios_p0, gpios_p1);
 
         let spim0 = SpimSrc::from_parts(
             board.SPIM0,
-            gpios_p0.p0_11.degrade(),
-            gpios_p1.p1_01.degrade(),
+            pins.spim_p0_data,
+            pins.spim_p0_clk,
             &POOL_QUEUE,
             Frequency::M2,
             GlobalRollingTimer,
@@ -170,8 +173,8 @@ const APP: () = {
 
         let spim1 = SpimSrc::from_parts(
             board.SPIM1,
-            gpios_p1.p1_03.degrade(),
-            gpios_p1.p1_02.degrade(),
+            pins.spim_p1_data,
+            pins.spim_p1_clk,
             &POOL_QUEUE,
             Frequency::M2,
             GlobalRollingTimer,
@@ -180,8 +183,8 @@ const APP: () = {
 
         let spim2 = SpimSrc::from_parts(
             board.SPIM2,
-            gpios_p1.p1_05.degrade(),
-            gpios_p1.p1_04.degrade(),
+            pins.spim_p2_data,
+            pins.spim_p2_clk,
             &POOL_QUEUE,
             Frequency::M2,
             GlobalRollingTimer,
@@ -190,8 +193,8 @@ const APP: () = {
 
         let spim3 = SpimSrc::from_parts(
             board.SPIM3,
-            gpios_p1.p1_07.degrade(),
-            gpios_p1.p1_06.degrade(),
+            pins.spim_p3_data,
+            pins.spim_p3_clk,
             &POOL_QUEUE,
             Frequency::M2,
             GlobalRollingTimer,
@@ -199,18 +202,21 @@ const APP: () = {
         );
 
         let ppi = ppi::Parts::new(board.PPI);
-        let saadc_pins = (gpios_p0.p0_02, gpios_p0.p0_03);
         let saadc = SaadcSrc::new(
             board.SAADC,
             board.TIMER1,
-            saadc_pins,
+            pins.adcs,
             ppi.ppi0,
             ppi.ppi1,
             &POOL_QUEUE,
         );
 
-        let start_stop_btn = gpios_p0.p0_25.into_pullup_input().degrade();
-        let start_stop_led = gpios_p0.p0_16.into_push_pull_output(Level::High).degrade();
+        let start_stop_btn = Board::into_button(pins.start_pause_btn);
+        let start_stop_led = if let Leds::DiscreteLeds { led3, .. } = pins.leds {
+            Some(led3.into_push_pull_output(Level::High))
+        } else {
+            None
+        };
 
         *CLOCKS = Some(clocks);
         let clocks = CLOCKS.as_ref().unwrap();
@@ -319,28 +325,32 @@ const APP: () = {
             /////////////////////////////////////////////////////////
             // FUSES, START, AND STOP
             /////////////////////////////////////////////////////////
-            if let Ok(is_low) = c.resources.start_stop_btn.is_low() {
-                if let Some(Level::Low) = button.poll(is_low) {
-                    if running {
-                        // Stopping by blowing the fuse
-                        defmt::info!("Stopping!");
-                        FUSE.store(true, Ordering::SeqCst);
-                        c.resources.start_stop_led.set_high().ok();
-                        running = false;
-                    } else if fuse_timeout.is_some() {
-                        // TODO: start after the fuse is cleared?
-                        defmt::info!("Not starting, waiting for fuse!");
-                    } else {
-                        defmt::info!("Starting!");
-                        FUSE.store(false, Ordering::SeqCst);
-                        rtic::pend(Interrupt::SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
-                        rtic::pend(Interrupt::SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1);
-                        rtic::pend(Interrupt::SPIM2_SPIS2_SPI2);
-                        rtic::pend(Interrupt::SPIM3);
-                        rtic::pend(Interrupt::SAADC);
-                        c.resources.start_stop_led.set_low().ok();
-                        running = true;
+            let is_active = Board::button_active(c.resources.start_stop_btn);
+            if let Some(Level::Low) = button.poll(is_active) {
+                if running {
+                    // Stopping by blowing the fuse
+                    defmt::info!("Stopping!");
+                    FUSE.store(true, Ordering::SeqCst);
+                    if let Some(led) = c.resources.start_stop_led.as_mut() {
+                        led.set_high().ok();
                     }
+                    running = false;
+                } else if fuse_timeout.is_some() {
+                    // TODO: start after the fuse is cleared?
+                    defmt::info!("Not starting, waiting for fuse!");
+                } else {
+                    defmt::info!("Starting!");
+                    FUSE.store(false, Ordering::SeqCst);
+                    rtic::pend(Interrupt::SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
+                    rtic::pend(Interrupt::SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1);
+                    rtic::pend(Interrupt::SPIM2_SPIS2_SPI2);
+                    rtic::pend(Interrupt::SPIM3);
+                    rtic::pend(Interrupt::SAADC);
+
+                    if let Some(led) = c.resources.start_stop_led.as_mut() {
+                        led.set_low().ok();
+                    }
+                    running = true;
                 }
             }
 
@@ -356,7 +366,9 @@ const APP: () = {
 
             if running && fuse_timeout.is_none() && FUSE.load(Ordering::SeqCst) {
                 defmt::info!("Fuse blown! Cooling down...");
-                c.resources.start_stop_led.set_high().ok();
+                if let Some(led) = c.resources.start_stop_led.as_mut() {
+                    led.set_high().ok();
+                }
                 fuse_timeout = Some(timer.get_ticks());
                 running = false;
             }
