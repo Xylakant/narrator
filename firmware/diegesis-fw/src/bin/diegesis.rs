@@ -3,7 +3,7 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use diegesis_fw::{Board, FillBuf, InternalReport, groundhog_nrf52::GlobalRollingTimer, pinmap::{PinMap, Leds}, profiler, saadc_src::SaadcSrc, spim_src::SpimSrc, time_ticks};
+use diegesis_fw::{Board, InternalReport, groundhog_nrf52::GlobalRollingTimer, pinmap::{PinMap, Leds}, profiler, saadc_src::SaadcSrc, spim_src::SpimSrc, time_ticks};
 use nrf52840_hal::{
     clocks::{Clocks, ExternalOscillator, Internal, LfOscStopped},
     gpio::{
@@ -24,8 +24,6 @@ use heapless::{mpmc::MpMcQueue, pool::singleton::Pool};
 use rtic::app;
 use usb_device::{bus::UsbBusAllocator, class::UsbClass as _, device::UsbDeviceState, prelude::*};
 use usbd_serial::{SerialPort, USB_CLASS_CDC};
-
-use kolben::rlercobs::Write as _;
 
 type UsbDevice<'a> = usb_device::device::UsbDevice<'static, Usbd<'a>>;
 type UsbSerial<'a> = SerialPort<'static, Usbd<'a>>;
@@ -421,42 +419,28 @@ const APP: () = {
             // for a more efficient use of the encoding buffer. For now, we may
             // end up wasting 0 <= n < 5KiB at the end of the ring, which is a
             // whole pbox worth (7.8% of 64K capacity)
-            time_ticks!(PROFILER.ticks_encoding, {
-                if let Ok(wgr) = enc_prod.grant_exact(1024 + 4096) {
-                    if let Some(mut new_rpt) = POOL_QUEUE.dequeue() {
+            if let Ok(mut wgr) = enc_prod.grant_exact(1024 + 4096) {
+                if let Some(mut new_rpt) = POOL_QUEUE.dequeue() {
+                    time_ticks!(PROFILER.ticks_encoding, {
                         PROFILER.report_sers();
 
                         let report = new_rpt.as_data_report();
                         let serialized = postcard::to_slice(&report, &mut temp_buf).unwrap();
 
-                        let mut encoder = kolben::rlercobs::Encoder::new(FillBuf { buf: wgr, used: 0 });
+                        let len = kolben::rlercobs::encode_all(serialized, &mut wgr, true).unwrap().len();
+                        wgr.commit(len);
 
-                        // Push all the bytes
-                        serialized.iter().for_each(|b| {
-                            encoder.write(*b).map_err(drop).unwrap();
-                        });
-
-                        // Finalize the message
-                        encoder.end().map_err(drop).unwrap();
-
-                        // Add the "end of message character"
-                        encoder.writer().write(0x00).map_err(drop).unwrap();
-
-                        let fbuf = encoder.free();
-
-                        let len = fbuf.content_len();
-                        fbuf.buf.commit(len);
                         PROFILER
                             .bbq_push_bytes
                             .fetch_add(len as u32, Ordering::SeqCst);
-                    }
-                };
-            });
+                    });
+                }
+            };
 
             // Second: Drain bytes into the serial port in order to
             // free up space to encode more.
-            time_ticks!(PROFILER.ticks_draining, {
-                if let Ok(rgr) = enc_cons.read() {
+            if let Ok(rgr) = enc_cons.read() {
+                time_ticks!(PROFILER.ticks_draining, {
                     match serial.write(&rgr) {
                         Ok(n) => {
                             PROFILER.usb_writes();
@@ -473,8 +457,8 @@ const APP: () = {
                             panic!("BAD USB WRITE - {:?}", e);
                         }
                     }
-                }
-            });
+                });
+            }
         }
     }
 };

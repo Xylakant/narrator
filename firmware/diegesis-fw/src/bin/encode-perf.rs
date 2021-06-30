@@ -138,27 +138,11 @@ fn main() -> ! {
         cortex_m::asm::nop();
 
         let serialized = postcard::to_slice(&output, &mut output_buf).unwrap();
-        let mut encoder = kolben::rlercobs::Encoder::new(FillBuf { buf: &mut third_buf, used: 0 });
-
-        cortex_m::asm::nop();
 
         let enc_start = timer.get_ticks();
 
-        // Push all the bytes
-        serialized.iter().for_each(|b| {
-            encoder.write(*b).map_err(drop).unwrap();
-        });
-
-        // Finalize the message
-        encoder.end().map_err(drop).unwrap();
-
-        // Add the "end of message character"
-        encoder.writer().write(0x00).map_err(drop).unwrap();
-
-        let fbuf = encoder.free();
-        let len = fbuf.content_len();
-
-        cortex_m::asm::nop();
+        let encoded = kolben::rlercobs::encode_all(serialized, &mut third_buf, true).unwrap();
+        let len = encoded.len();
 
         let enc_elapsed = timer.ticks_since(enc_start);
         let elapsed = timer.ticks_since(start);
