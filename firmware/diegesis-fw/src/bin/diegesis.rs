@@ -21,10 +21,11 @@ use bbqueue::{consts as bbconsts, BBBuffer, ConstBBBuffer};
 use embedded_hal::digital::v2::OutputPin;
 use groundhog::RollingTimer;
 use heapless::{mpmc::MpMcQueue, pool::singleton::Pool};
-use postcard::to_rlercobs_writer;
 use rtic::app;
 use usb_device::{bus::UsbBusAllocator, class::UsbClass as _, device::UsbDeviceState, prelude::*};
 use usbd_serial::{SerialPort, USB_CLASS_CDC};
+
+use kolben::rlercobs::Write as _;
 
 type UsbDevice<'a> = usb_device::device::UsbDevice<'static, Usbd<'a>>;
 type UsbSerial<'a> = SerialPort<'static, Usbd<'a>>;
@@ -311,6 +312,8 @@ const APP: () = {
         let mut min_ticks = 0xFFFFFFFF;
         let mut max_ticks = 0x00000000;
 
+        let mut temp_buf = [0u8; 4096 + 1024];
+
         loop {
             let elapsed = timer.ticks_since(last_loop);
             min_ticks = min_ticks.min(elapsed);
@@ -366,7 +369,7 @@ const APP: () = {
                         rtic::pend(Interrupt::SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1);
                         rtic::pend(Interrupt::SPIM2_SPIS2_SPI2);
                         rtic::pend(Interrupt::SPIM3);
-                        // rtic::pend(Interrupt::SAADC);
+                        rtic::pend(Interrupt::SAADC);
 
                         if let Some(led) = c.resources.start_stop_led.as_mut() {
                             led.set_low().ok();
@@ -422,13 +425,25 @@ const APP: () = {
                 if let Ok(wgr) = enc_prod.grant_exact(1024 + 4096) {
                     if let Some(mut new_rpt) = POOL_QUEUE.dequeue() {
                         PROFILER.report_sers();
-                        let fbuf = to_rlercobs_writer(
-                            // TODO(AJM): We should be sending DataReports through the queue,
-                            // not just boxes, so the senders can generate the metadata
-                            &new_rpt.as_data_report(),
-                            FillBuf { buf: wgr, used: 0 },
-                        )
-                        .unwrap();
+
+                        let report = new_rpt.as_data_report();
+                        let serialized = postcard::to_slice(&report, &mut temp_buf).unwrap();
+
+                        let mut encoder = kolben::rlercobs::Encoder::new(FillBuf { buf: wgr, used: 0 });
+
+                        // Push all the bytes
+                        serialized.iter().for_each(|b| {
+                            encoder.write(*b).map_err(drop).unwrap();
+                        });
+
+                        // Finalize the message
+                        encoder.end().map_err(drop).unwrap();
+
+                        // Add the "end of message character"
+                        encoder.writer().write(0x00).map_err(drop).unwrap();
+
+                        let fbuf = encoder.free();
+
                         let len = fbuf.content_len();
                         fbuf.buf.commit(len);
                         PROFILER

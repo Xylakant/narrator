@@ -6,7 +6,7 @@ macro_rules! time_ticks {
         let ret = {
             $body
         };
-        $atomic_tick.fetch_add(start, core::sync::atomic::Ordering::SeqCst);
+        $atomic_tick.fetch_add(timer.ticks_since(start), core::sync::atomic::Ordering::SeqCst);
         ret
     };
 }
