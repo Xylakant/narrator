@@ -32,6 +32,8 @@ use serde::{Serialize, Deserialize};
 
 use diegesis_icd::{DataReport, Managed, ReportKind};
 
+use rlercobs::Write as _;
+
 #[cortex_m_rt::entry]
 fn main() -> ! {
     // Enable instruction caches for MAXIMUM SPEED
@@ -65,6 +67,7 @@ fn main() -> ! {
 
     let mut test_buffer = [0u8; 4096];
     let mut output_buf = [0u8; 4096 + 1024];
+    let mut third_buf = [0u8; 4096 + 1024];
 
     let fill_patterns: &[(&str, fn(&mut [u8; 4096]))] = &[
         ("all_zeroes  ", all_zeroes),
@@ -80,7 +83,6 @@ fn main() -> ! {
         (pattern)(&mut test_buffer);
 
         // encode
-        let start = timer.get_ticks();
         let output = DataReport {
             timestamp: 0x01020304,
 
@@ -89,6 +91,7 @@ fn main() -> ! {
             payload: Managed::Borrowed(&mut test_buffer),
         };
 
+        let start = timer.get_ticks();
         let fbuf = to_rlercobs_writer(
             // TODO(AJM): We should be sending DataReports through the queue,
             // not just boxes, so the senders can generate the metadata
@@ -102,6 +105,67 @@ fn main() -> ! {
         let cyc_bytes = ((elapsed as f32) / 4_000_000.0 / 4096.0) * 64_000_000.0;
         defmt::info!("| {} | {}\t | {} | {} |", name, len as u32, elapsed, cyc_bytes);
         // display timing
+
+        let now = timer.get_ticks();
+        while timer.millis_since(now) < 500 { }
+    }
+
+    for (name, pattern) in fill_patterns {
+        // fill
+        (pattern)(&mut test_buffer);
+
+        // encode
+        let output = DataReport {
+            timestamp: 0x01020304,
+
+            kind: ReportKind::DigitalPin { channel: 23 },
+
+            payload: Managed::Borrowed(&mut test_buffer),
+        };
+
+        // #[inline(always)]
+        // fn try_push(&mut self, data: u8) -> core::result::Result<(), ()> {
+        //     self.cobs.write(data).map_err(drop)
+        // }
+
+        // fn release(mut self) -> core::result::Result<Self::Output, ()> {
+        //     self.cobs.end().map_err(drop)?;
+        //     self.cobs.writer().write(0x00).map_err(drop)?;
+        //     Ok(self.cobs.free())
+        // }
+
+        let start = timer.get_ticks();
+        cortex_m::asm::nop();
+
+        let serialized = postcard::to_slice(&output, &mut output_buf).unwrap();
+        let mut encoder = kolben::rlercobs::Encoder::new(FillBuf { buf: &mut third_buf, used: 0 });
+
+        cortex_m::asm::nop();
+
+        let enc_start = timer.get_ticks();
+
+        // Push all the bytes
+        serialized.iter().for_each(|b| {
+            encoder.write(*b).map_err(drop).unwrap();
+        });
+
+        // Finalize the message
+        encoder.end().map_err(drop).unwrap();
+
+        // Add the "end of message character"
+        encoder.writer().write(0x00).map_err(drop).unwrap();
+
+        let fbuf = encoder.free();
+        let len = fbuf.content_len();
+
+        cortex_m::asm::nop();
+
+        let enc_elapsed = timer.ticks_since(enc_start);
+        let elapsed = timer.ticks_since(start);
+        let cyc_bytes = ((elapsed as f32) / 4_000_000.0 / 4096.0) * 64_000_000.0;
+        defmt::info!("| {} | {}\t | {} | {} |", name, len as u32, elapsed, cyc_bytes);
+        // display timing
+        defmt::info!("ser: {}, enc: {}", elapsed - enc_elapsed, enc_elapsed);
 
         let now = timer.get_ticks();
         while timer.millis_since(now) < 500 { }
