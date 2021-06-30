@@ -74,11 +74,8 @@ impl Shame for SPIM3 {
 }
 
 // (4_000_000 ticks/s) / (2_000_000 bps / 8 bit-per-byte / 4096 byte-per-box)
-const EXPECTED_TICKS: u32 = 65536;
-
-// Allow for +/- 0.2%
-// (totally unscientific number)
-const ACCEPTABLE_DELTA: i32 = (EXPECTED_TICKS as i32) / 500;
+// const EXPECTED_TICKS: u32 = 65536;
+const EXPECTED_TICKS: u32 = 65536 + (655 * 2);
 
 use core::fmt::Debug;
 
@@ -173,6 +170,7 @@ where
                     SpimPeriph::OnePending(txfr)
                 } else {
                     // No data available! Blow the fuse.
+                    defmt::error!("SPIM: Blowing fuse idle-to-one transition");
                     fuse.store(true, Ordering::SeqCst);
                     SpimPeriph::Idle(p)
                 }
@@ -194,10 +192,10 @@ where
                     let (_txb, rxb, p) = ts.wait();
 
                     let elapsed = self.timer.ticks_since(self.last_start);
-                    let delta = (EXPECTED_TICKS as i32) - (elapsed as i32);
-                    if (delta < -ACCEPTABLE_DELTA) || (delta > ACCEPTABLE_DELTA) {
-                        defmt::warn!("spi deviation: {}", delta);
+                    if elapsed > EXPECTED_TICKS {
+                        defmt::warn!("spi deviation: {} elapsed!", elapsed);
                     }
+                    self.last_start = self.timer.get_ticks();
 
                     let rpt = InternalReport {
                         timestamp: 0x01020304,
@@ -240,6 +238,7 @@ where
                     }
                 } else {
                     // No data available! Blow the fuse.
+                    defmt::error!("SPIM: Blowing fuse one-to-two transition");
                     fuse.store(true, Ordering::SeqCst);
                     SpimPeriph::OnePending(ts)
                 }
@@ -252,11 +251,9 @@ where
                 let (_txb, rxb, one) = transfer.exchange_transfer_wait(pending);
 
                 let elapsed = self.timer.ticks_since(self.last_start);
-                let delta = (EXPECTED_TICKS as i32) - (elapsed as i32);
-                if (delta < -ACCEPTABLE_DELTA) || (delta > ACCEPTABLE_DELTA) {
-                    defmt::warn!("spi deviation: {}", delta);
+                if elapsed >= EXPECTED_TICKS {
+                    defmt::warn!("spi deviation: {} elapsed!", elapsed);
                 }
-
                 self.last_start = self.timer.get_ticks();
 
                 // Disable end-to-start shortcut

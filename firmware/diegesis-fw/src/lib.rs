@@ -3,7 +3,6 @@
 use core::{
     fmt::Debug,
     ops::DerefMut,
-    sync::atomic::{AtomicUsize, Ordering},
 };
 
 use nrf52840_hal::{
@@ -35,6 +34,9 @@ pub mod pinmap;
 #[macro_use]
 pub mod profile_ct;
 
+use groundhog_nrf52::GlobalRollingTimer;
+use groundhog::RollingTimer;
+
 // same panicking *behavior* as `panic-probe` but doesn't print a panic message
 // this prevents the panic message being printed *twice* when `defmt::panic` is invoked
 #[defmt::panic_handler]
@@ -42,12 +44,9 @@ fn panic() -> ! {
     cortex_m::asm::udf()
 }
 
-static COUNT: AtomicUsize = AtomicUsize::new(0);
-defmt::timestamp!("{=usize}", {
+defmt::timestamp!("{=u32}", {
     // NOTE(no-CAS) `timestamps` runs with interrupts disabled
-    let n = COUNT.load(Ordering::Relaxed);
-    COUNT.store(n + 1, Ordering::Relaxed);
-    n
+    GlobalRollingTimer::new().get_ticks()
 });
 
 /// Terminates the application and makes `probe-run` exit with exit-code = 0
@@ -72,7 +71,7 @@ unsafe impl ReadBuffer for NopSlice {
 
 #[derive(Debug)]
 pub struct FillBuf {
-    pub buf: GrantW<'static, bbconsts::U65536>,
+    pub buf: GrantW<'static, bbconsts::U32768>,
     pub used: usize,
 }
 

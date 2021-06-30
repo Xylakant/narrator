@@ -151,6 +151,7 @@ where
                     State::OnePending(pend)
                 } else {
                     // No data available! Blow the fuse.
+                    defmt::error!("ADCs: Blowing fuse idle-to-one transition");
                     fuse.store(true, Ordering::SeqCst);
                     State::Idle(p, c)
                 }
@@ -207,6 +208,7 @@ where
                     State::TwoPending(pend)
                 } else {
                     // No data available! Blow the fuse.
+                    defmt::error!("ADCs: Blowing fuse one-to-two transition");
                     fuse.store(true, Ordering::SeqCst);
                     State::OnePending(ts)
                 }
